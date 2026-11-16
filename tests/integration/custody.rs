@@ -510,7 +510,12 @@ impl Controller {
             released: false,
             payloads: Vec::new(),
         };
-        assert_eq!(controller.receive(), json!({"kind":"ready"}));
+        assert_eq!(
+            controller.receive(),
+            json!({"kind":"ready"}),
+            "{}",
+            super::ports::diagnostics(address)
+        );
         controller
     }
     fn send(&mut self, message: Value, fds: &[i32]) {
