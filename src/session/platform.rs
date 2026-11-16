@@ -47,6 +47,7 @@ fn observe_group(group: libc::pid_t) -> io::Result<Vec<libc::pid_t>> {
     let mut live = Vec::new();
     for pid in pids.into_iter().filter(|pid| *pid > 0) {
         let mut info = unsafe { std::mem::zeroed::<libc::proc_bsdinfo>() };
+        unsafe { *libc::__error() = 0 };
         let bytes = unsafe {
             libc::proc_pidinfo(
                 pid,
@@ -56,11 +57,23 @@ fn observe_group(group: libc::pid_t) -> io::Result<Vec<libc::pid_t>> {
                 size_of_val(&info) as i32,
             )
         };
-        if bytes == 0 && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+        let error = io::Error::last_os_error();
+        let errno = error.raw_os_error().unwrap_or(0);
+        if bytes == 0 && errno == libc::ESRCH {
             continue;
         }
         if bytes as usize != size_of_val(&info) {
-            return Err(io::Error::other("cannot inspect owned group member"));
+            return Err(io::Error::new(
+                if errno == 0 {
+                    io::ErrorKind::InvalidData
+                } else {
+                    error.kind()
+                },
+                format!(
+                    "cannot inspect owned group member {pid} in group {group}: proc_pidinfo returned {bytes} bytes, expected {}; errno {errno}",
+                    size_of_val(&info)
+                ),
+            ));
         }
         if info.pbi_pgid == group as u32 && info.pbi_status != libc::SZOMB {
             live.push(pid);
