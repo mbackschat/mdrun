@@ -39,7 +39,7 @@ The complete file also has your title, timestamp and note. It is ordinary Markdo
 
 ## Install and get help
 
-**0.1.0 release candidate:** there is no published product release yet, and publication is held at the owner's request. Document editing, replay, discovery and cooperative managed execution have macOS/Linux qualification. The public session and SDK version-1 contract is frozen; final artifact checks remain tracked in the [implementation plan](docs/PLAN.md). Application adapters still need their own parity and resource qualification.
+**0.1.0 release candidate:** there is no published product release yet, and publication is held at the owner's request. Document editing, replay, discovery, cooperative managed execution, native packages and SDK assets have passed macOS/Linux pre-release qualification. The public session and SDK version-1 contract is frozen; the [implementation plan](docs/PLAN.md) records the qualified revision and remaining publication gates. Application adapters still need their own parity and resource qualification.
 
 To try the current source, install Rust/Cargo and build the pinned dependencies:
 
@@ -140,7 +140,7 @@ Managed scripts and applications must keep descendants in their assigned process
 
 | Goal | Why it matters |
 | --- | --- |
-| Compact native distribution | Pursue a small executable and straightforward installs; final sizes and comparisons remain a qualification task, not a claim that Rust alone guarantees a smaller binary |
+| Compact native distribution | A single native executable with [measured target sizes](docs/distribution.md#candidate-artifact-sizes); standard package formats keep installation straightforward |
 | Standalone host | No language runtime or external Showboat installation is needed to start mdrun; compiled Rust libraries supply standard CLI parsing, HTTP/TLS and other focused functionality |
 | Built-in cooperative warm execution | Amortize qualified application startup across JVM, Node and Python calls while retaining an independent cold path for parity checks |
 | Minimal consumer harness | Put generic session supervision in one tool; leave build identity, eligibility and application reset with the consumer |

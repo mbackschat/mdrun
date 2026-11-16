@@ -1,6 +1,6 @@
 # Documentation
 
-Document CLI, read-only discovery and cooperative managed execution have current macOS/Linux runtime qualification. The public session and SDK version-1 contract is frozen for the 0.1.0 release candidate; final artifact checks remain open and publication is held. The [implementation plan](PLAN.md) identifies exact-revision evidence and remaining gates. Current documents below govern work; the research index maps the extracted conclusions to their maintained owners.
+Document CLI, read-only discovery, cooperative managed execution, native packages and SDK assets have current macOS/Linux pre-release qualification. The public session and SDK version-1 contract is frozen for the 0.1.0 release candidate; publication is held. The [implementation plan](PLAN.md) identifies exact-revision evidence and remaining public-download/Homebrew gates. Current documents below govern work; the research index maps the extracted conclusions to their maintained owners.
 
 | Document | Owns |
 | --- | --- |

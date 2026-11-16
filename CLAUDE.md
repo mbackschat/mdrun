@@ -56,6 +56,8 @@ Temporary files belong to their invoking command; use scoped temporary directori
 
 Before asking the owner to choose, double-check the recommendation against source and evidence, supply the rationale, and proceed on routine reversible decisions already within scope. Report encountered code smells and material evidence limits without extending the task silently. Follow global Git and commit-message rules; do not create worktrees or push without explicit instructions.
 
+Publication is held at the owner's request. Follow the [pre-release handback boundary](docs/PLAN.md): do not create release tags, publish GitHub releases or update the Homebrew tap until the owner resumes publication. Non-publishing qualification may continue.
+
 Commit autonomously when a coherent checkpoint passes the checks applicable to its changed behavior. Group related edits into reviewable units rather than committing every small step. Follow the global `F:` exception and honor explicit instructions not to commit.
 
 For recorded user guides, capture actual command output; never invent or hand-edit it. After changing commands, fixtures or recorded behavior, verify affected recordings and independent expected-result assertions. Replay agreement alone does not establish correctness.
