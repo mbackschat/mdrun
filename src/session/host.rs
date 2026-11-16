@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 
 use super::broker::{CustodyAccess, ScopedCustody};
 use super::client::{ClientConfig, NativeRequest, Reply};
-use super::config::{Binding, Connect, WorkerConfig};
+use super::config::{Binding, Connect, WorkerConfig, cleanup_grace};
 use super::context::{NativeContext, SESSION_ENV};
 use super::custody::{self, Custody, CustodyConfig, CustodyEvent, PayloadStatus, SpawnSpec};
 use super::wire::{self, Frame, Role, Terminal};
@@ -391,7 +391,6 @@ struct State {
     worker: GroupState,
     infrastructure: Option<String>,
     stopped: bool,
-    uncertain: bool,
     shutdown: bool,
     warm_calls: u64,
     cold_calls: u64,
@@ -407,7 +406,6 @@ impl State {
             worker: GroupState::default(),
             infrastructure: None,
             stopped: false,
-            uncertain: false,
             shutdown: false,
             warm_calls: 0,
             cold_calls: 0,
@@ -473,7 +471,6 @@ impl State {
                 }
             }
             CustodyEvent::Uncertain { reason, .. } => {
-                self.uncertain = true;
                 self.fail(format!("payload custody is uncertain: {reason}"));
             }
             CustodyEvent::Fault { reason } => {
@@ -482,7 +479,6 @@ impl State {
             CustodyEvent::Stopped { clean } => {
                 self.stopped = clean;
                 if !clean {
-                    self.uncertain = true;
                     self.fail("native custody stopped without clean ownership");
                 }
             }
@@ -816,25 +812,20 @@ pub fn run_prepared(
         worker.close();
     }
     let _ = custody.stop();
-    let cleanup_deadline = Instant::now()
-        .checked_add(
-            Duration::from_millis(binding.cleanup_timeout_ms).saturating_mul(2)
-                + Duration::from_millis(500),
-        )
+    let cleanup_deadline = cleanup_grace(binding.cleanup_timeout_ms)
+        .and_then(|grace| Instant::now().checked_add(grace))
         .ok_or("cleanup deadline is not representable")?;
     while !state.stopped && Instant::now() < cleanup_deadline {
         match custody.poll_event(TICK) {
             Ok(Some(event)) => state.event(event, None),
             Ok(None) => {}
             Err(_) => {
-                state.uncertain = true;
                 state.fail("native custody control was lost during cleanup");
                 break;
             }
         }
     }
     if !state.stopped {
-        state.uncertain = true;
         state.fail("cleanup did not establish released custody");
     }
     directory.retained = !state.stopped;
@@ -952,8 +943,8 @@ fn start_worker(
     };
     loop {
         remaining(deadline)?;
-        if let Ok(message) = worker.control.frames.try_recv() {
-            return Err(control_error(message));
+        if worker.control.frames.try_recv().is_ok() {
+            return Err(CONTROL_ERROR.to_owned());
         }
         match worker.data.frames.try_recv() {
             Ok(Ok(Some(Frame::Ready {
@@ -1051,9 +1042,9 @@ fn coordinate(
         if let Some(worker) = worker.as_mut() {
             worker.writer.flush(&mut worker.pending)?;
             match worker.control.frames.try_recv() {
-                Ok(message) if !state.shutdown => return Err(control_error(message)),
+                Ok(_) if !state.shutdown => return Err(CONTROL_ERROR.to_owned()),
                 Ok(Ok(None)) | Err(TryRecvError::Disconnected) if state.shutdown => {}
-                Ok(message) => return Err(control_error(message)),
+                Ok(_) => return Err(CONTROL_ERROR.to_owned()),
                 Err(TryRecvError::Empty) => {}
                 Err(TryRecvError::Disconnected) => {
                     return Err("worker control reader stopped".to_owned());
@@ -1453,9 +1444,7 @@ fn validate_request(request: &NativeRequest) -> Result<(), String> {
     Ok(())
 }
 
-fn control_error(_message: Result<Option<Frame>, String>) -> String {
-    "worker control channel fault or unexpected closure".to_owned()
-}
+const CONTROL_ERROR: &str = "worker control channel fault or unexpected closure";
 
 fn remaining(deadline: Instant) -> Result<Duration, String> {
     deadline

@@ -809,15 +809,7 @@ impl ScopedCustody {
             }
         };
         Ok(Some(match event {
-            CustodyEvent::ScopeEvent { scope, event } if scope == self.scope => match event {
-                GroupEvent::Started { id, pid, group } => CustodyEvent::Started { id, pid, group },
-                GroupEvent::Exited { id, status } => CustodyEvent::Exited { id, status },
-                GroupEvent::Clean { id, forced } => CustodyEvent::Clean { id, forced },
-                GroupEvent::Fault { reason } | GroupEvent::Rejected { reason, .. } => {
-                    CustodyEvent::Fault { reason }
-                }
-                GroupEvent::Uncertain { id, reason } => CustodyEvent::Uncertain { id, reason },
-            },
+            CustodyEvent::ScopeEvent { scope, event } if scope == self.scope => event.into(),
             CustodyEvent::ScopeStopped { scope, clean } if scope == self.scope => {
                 CustodyEvent::Stopped { clean }
             }
@@ -900,16 +892,13 @@ fn serve(
                 stop_sent = true;
             }
             for (scope, entry) in &mut scopes {
-                if !entry.phase.terminal() && entry.signals.lost.load(Ordering::Acquire) {
+                let lost = entry.signals.lost.load(Ordering::Acquire);
+                if !entry.phase.terminal() && lost {
                     status.lock().unwrap().failed = true;
                 }
                 if entry.phase == ScopePhase::Running
-                    && (entry.signals.stop.load(Ordering::Acquire)
-                        || entry.signals.lost.load(Ordering::Acquire))
+                    && (lost || entry.signals.stop.load(Ordering::Acquire))
                 {
-                    if entry.signals.lost.load(Ordering::Acquire) {
-                        status.lock().unwrap().failed = true;
-                    }
                     custody.request(
                         &OwnerRequest::StopScope {
                             scope: scope.clone(),

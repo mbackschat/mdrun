@@ -121,7 +121,7 @@ pub enum Frame {
     Shutdown,
 }
 
-fn required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+pub(super) fn required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
     T: Deserialize<'de>,

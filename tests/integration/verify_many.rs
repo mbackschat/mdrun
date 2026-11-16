@@ -846,7 +846,7 @@ impl OwnerLossCleanup<'_> {
             if self
                 .status()
                 .is_some_and(|state| state["status"] == "released")
-                && !super::session_owner_loss::excluded(self.address)
+                && !crate::ports::excluded(self.address)
             {
                 return;
             }
@@ -872,7 +872,7 @@ impl Drop for OwnerLossCleanup<'_> {
             if self
                 .status()
                 .is_some_and(|status| status["status"] == "released")
-                && !super::session_owner_loss::excluded(self.address)
+                && !crate::ports::excluded(self.address)
                 && self.actors.iter().all(|actor| !actor.alive())
             {
                 break;
@@ -893,7 +893,8 @@ impl Drop for OwnerLossCleanup<'_> {
 
 #[test]
 fn owner_loss_keeps_shared_exclusion_until_both_surviving_payload_groups_are_gone() {
-    use super::session_owner_loss::{excluded, observe, wait_until};
+    use super::session_owner_loss::{observe, wait_until};
+    use crate::ports::excluded;
     let fixture = Fixture::new();
     fixture.write("payload.sh", b"id=$1\ntrap '' TERM HUP INT\nprintf '%s\\n' \"$$\" > \"$id.pid\"\n: > \"$id.started\"\nn=0\nwhile test ! -f owner.finish; do\n  if test \"$n\" -ge 1000; then : > \"$id.expired\"; exit 1; fi\n  n=$((n + 1))\n  sleep 0.01\ndone\n");
     for id in ["a", "b"] {

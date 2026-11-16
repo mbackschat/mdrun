@@ -453,7 +453,7 @@ pub fn receive_fds(stream: &UnixStream, expected: usize) -> io::Result<Vec<Owned
     Ok(descriptors)
 }
 
-fn set_cloexec(fd: i32) -> io::Result<()> {
+pub(super) fn set_cloexec(fd: i32) -> io::Result<()> {
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
     if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) } < 0 {
         return Err(io::Error::last_os_error());
@@ -592,7 +592,6 @@ struct Group {
     sweep: Sweep,
     forced: bool,
     done: bool,
-    uncertain: bool,
     uncertainty_reason: Option<String>,
     control_closed: bool,
     stopping: Option<Instant>,
@@ -622,13 +621,10 @@ struct Scope {
     failed: bool,
 }
 
-fn emit_group(owner: &mut UnixStream, owner_alive: &mut bool, key: &GroupKey, event: GroupEvent) {
-    let event = match &key.scope {
-        Some(scope) => CustodyEvent::ScopeEvent {
-            scope: scope.clone(),
-            event,
-        },
-        None => match event {
+/// Flattens a group event for an unscoped consumer, which has no admission phase and treats rejection as a fault.
+impl From<GroupEvent> for CustodyEvent {
+    fn from(event: GroupEvent) -> Self {
+        match event {
             GroupEvent::Started { id, pid, group } => CustodyEvent::Started { id, pid, group },
             GroupEvent::Exited { id, status } => CustodyEvent::Exited { id, status },
             GroupEvent::Clean { id, forced } => CustodyEvent::Clean { id, forced },
@@ -636,7 +632,17 @@ fn emit_group(owner: &mut UnixStream, owner_alive: &mut bool, key: &GroupKey, ev
             GroupEvent::Fault { reason } | GroupEvent::Rejected { reason, .. } => {
                 CustodyEvent::Fault { reason }
             }
+        }
+    }
+}
+
+fn emit_group(owner: &mut UnixStream, owner_alive: &mut bool, key: &GroupKey, event: GroupEvent) {
+    let event = match &key.scope {
+        Some(scope) => CustodyEvent::ScopeEvent {
+            scope: scope.clone(),
+            event,
         },
+        None => event.into(),
     };
     emit(owner, owner_alive, &event);
 }
@@ -674,8 +680,7 @@ fn emit(owner: &mut UnixStream, owner_alive: &mut bool, event: &CustodyEvent) {
 }
 
 fn uncertain(group: &mut Group, owner: &mut UnixStream, owner_alive: &mut bool, reason: &str) {
-    if !group.uncertain {
-        group.uncertain = true;
+    if group.uncertainty_reason.is_none() {
         group.uncertainty_reason = Some(reason.to_owned());
         emit_group(
             owner,
@@ -698,7 +703,7 @@ fn stop_group(group: &mut Group) {
 
 fn save_state(path: &Path, groups: &[Group], scopes: &[Scope], status: &str) -> io::Result<()> {
     let groups: Vec<_> = groups.iter().map(|group| {
-        let mut state = serde_json::json!({"id":group.key.id,"anchor_pid":group.child.id(),"clean":group.done,"uncertain":group.uncertain,"sweep":group.sweep});
+        let mut state = serde_json::json!({"id":group.key.id,"anchor_pid":group.child.id(),"clean":group.done,"uncertain":group.uncertainty_reason.is_some(),"sweep":group.sweep});
         if let Some(scope) = &group.key.scope { state["scope"] = serde_json::json!(scope); }
         if let Some(reason) = &group.uncertainty_reason { state["uncertainty_reason"] = serde_json::json!(reason); }
         state
@@ -924,7 +929,6 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                             sweep: Sweep::NotRequested,
                             forced: false,
                             done: false,
-                            uncertain: false,
                             uncertainty_reason: None,
                             control_closed: false,
                             stopping: None,
@@ -1218,7 +1222,10 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                 }
             }
             let restoring_child = terminal_parents.contains(&group.key);
-            if group.sweep == Sweep::Pending && !restoring_child && !group.uncertain {
+            if group.sweep == Sweep::Pending
+                && !restoring_child
+                && group.uncertainty_reason.is_none()
+            {
                 if send_packet(&mut group.control, &AnchorRequest::SweepAck, &[]).is_err() {
                     uncertain(
                         group,
@@ -1258,7 +1265,7 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                         &mut owner_alive,
                         "anchor exited without a certified sweep",
                     );
-                } else if !group.uncertain {
+                } else if group.uncertainty_reason.is_none() {
                     match platform::live_group_members(group.child.id() as i32) {
                         Ok(members) if members.is_empty() => {
                             if group
@@ -1309,7 +1316,7 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                     "cleanup deadline expired without a clean group",
                 );
             }
-            if group.uncertain {
+            if group.uncertainty_reason.is_some() {
                 fail_scope(&mut scopes, &group.key, &mut admission_failed);
                 admission_failed = true;
             }
@@ -1340,7 +1347,7 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                 .collect::<Vec<_>>(),
             groups
                 .iter()
-                .map(|group| (group.done, group.uncertain, group.sweep))
+                .map(|group| (group.done, group.uncertainty_reason.is_some(), group.sweep))
                 .collect::<Vec<_>>(),
         );
         if last_state.as_ref() != Some(&state) {
@@ -1348,7 +1355,10 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                 private_config_path,
                 &groups,
                 &scopes,
-                if groups.iter().any(|group| group.uncertain) {
+                if groups
+                    .iter()
+                    .any(|group| group.uncertainty_reason.is_some())
+                {
                     "custody_retained"
                 } else if stopping {
                     "stopping"
@@ -1395,6 +1405,13 @@ fn retain_anchor_with_reason(control: &mut UnixStream, reason: String) -> ! {
     }
 }
 
+/// Delivers an anchor event, or retains the anchor because its owner can no longer account for the group.
+fn send_or_retain(control: &mut UnixStream, event: &AnchorEvent) {
+    if send_packet(control, event, &[]).is_err() {
+        retain_anchor(control);
+    }
+}
+
 fn report_interruption(
     control: &mut UnixStream,
     reported: &mut bool,
@@ -1402,18 +1419,14 @@ fn report_interruption(
 ) -> bool {
     let interrupted = INTERRUPTED.swap(false, Ordering::AcqRel);
     if interrupted && !*reported && !own_termination {
-        if send_packet(control, &AnchorEvent::Interrupted, &[]).is_err() {
-            retain_anchor(control);
-        }
+        send_or_retain(control, &AnchorEvent::Interrupted);
         *reported = true;
     }
     *reported
 }
 
 fn sweep_anchor(control: &mut UnixStream, forced: bool, interruption: &mut bool) -> ! {
-    if send_packet(control, &AnchorEvent::Sweep { forced }, &[]).is_err() {
-        retain_anchor(control);
-    }
+    send_or_retain(control, &AnchorEvent::Sweep { forced });
     loop {
         // Nested terminal cleanup may defer acknowledgment beyond the control socket's read timeout.
         match readable(control, Duration::from_millis(10)) {
@@ -1490,22 +1503,12 @@ pub fn run_anchor() -> io::Result<i32> {
     let mut payload = match command.spawn() {
         Ok(payload) => payload,
         Err(_) => {
-            if send_packet(&mut control, &AnchorEvent::LaunchFailed, &[]).is_err() {
-                retain_anchor(&mut control);
-            }
+            send_or_retain(&mut control, &AnchorEvent::LaunchFailed);
             sweep_anchor(&mut control, false, &mut interruption);
         }
     };
     drop(command);
-    if send_packet(
-        &mut control,
-        &AnchorEvent::Started { pid: payload.id() },
-        &[],
-    )
-    .is_err()
-    {
-        retain_anchor(&mut control);
-    }
+    send_or_retain(&mut control, &AnchorEvent::Started { pid: payload.id() });
     let mut stopped = None;
     let mut exited = false;
     let mut term = false;
@@ -1515,7 +1518,7 @@ pub fn run_anchor() -> io::Result<i32> {
                 Ok(Some(status)) => {
                     exited = true;
                     stopped.get_or_insert_with(Instant::now);
-                    if send_packet(
+                    send_or_retain(
                         &mut control,
                         &AnchorEvent::Exited {
                             status: PayloadStatus {
@@ -1523,12 +1526,7 @@ pub fn run_anchor() -> io::Result<i32> {
                                 signal: status.signal(),
                             },
                         },
-                        &[],
-                    )
-                    .is_err()
-                    {
-                        retain_anchor(&mut control);
-                    }
+                    );
                 }
                 Ok(None) => {}
                 Err(error) => retain_anchor_with_reason(

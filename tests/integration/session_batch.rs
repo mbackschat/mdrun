@@ -48,13 +48,6 @@ fn listener_state(worker: &Value) -> Value {
     state
 }
 
-fn assert_excluded(address: SocketAddr) {
-    assert_eq!(
-        crate::ports::bind(address).unwrap_err().kind(),
-        std::io::ErrorKind::AddrInUse
-    );
-}
-
 fn worker_count(directory: &Path) -> usize {
     fs::read_dir(directory)
         .unwrap()
@@ -127,7 +120,7 @@ fn warm_slots_cover_worker_shutdown_and_cleanup_before_queued_admission() {
             let healthy = read_state(&fixture.0, "b.second.json");
             assert_ne!(first["pid"], healthy["pid"]);
             assert_ne!(first["session_id"], healthy["session_id"]);
-            assert_excluded(address);
+            assert!(crate::ports::excluded(address));
             assert!(!fixture.0.join("c.first.json").exists());
             fixture.write("a.invoke-go", b"");
             let shutdown = read_state(&fixture.0, "a.shutdown.json");
@@ -145,7 +138,7 @@ fn warm_slots_cover_worker_shutdown_and_cleanup_before_queued_admission() {
                 );
                 assert!(!fixture.0.join("c.first.json").exists());
                 assert!(!fixture.0.join("a.closed.json").exists());
-                assert_excluded(address);
+                assert!(crate::ports::excluded(address));
                 std::thread::sleep(Duration::from_millis(5));
             }
             let first_state = listener_state(&first);
@@ -161,7 +154,7 @@ fn warm_slots_cover_worker_shutdown_and_cleanup_before_queued_admission() {
             assert_ne!(queued["session_id"], healthy["session_id"]);
             assert_eq!(listener_state(&healthy)["stopping"], false);
             assert!(!fixture.0.join("b.shutdown.json").exists());
-            assert_excluded(address);
+            assert!(crate::ports::excluded(address));
             fixture.write("b.invoke-go", b"");
             fixture.write("c.invoke-go", b"");
             read_state(&fixture.0, "b.shutdown.json");

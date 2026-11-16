@@ -52,22 +52,14 @@ pub enum Reply {
     },
     ColdDone {
         request_id: String,
-        #[serde(deserialize_with = "required_option")]
+        #[serde(deserialize_with = "wire::required_option")]
         exit_code: Option<u8>,
-        #[serde(deserialize_with = "required_option")]
+        #[serde(deserialize_with = "wire::required_option")]
         signal: Option<u32>,
     },
     Error {
         reason: String,
     },
-}
-
-fn required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    Option::deserialize(deserializer)
 }
 
 pub fn load(path: &Path) -> Result<ClientConfig, String> {
@@ -162,7 +154,7 @@ impl PeerClose {
                 return Err("cannot observe native session host liveness".to_owned());
             }
             let queue = unsafe { OwnedFd::from_raw_fd(queue) };
-            if unsafe { libc::fcntl(queue.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
+            if custody::set_cloexec(queue.as_raw_fd()).is_err() {
                 return Err("cannot configure native host liveness observation".to_owned());
             }
             let event = libc::kevent {
@@ -264,7 +256,7 @@ fn connect(path: &Path, deadline: &Deadline) -> Result<UnixStream, String> {
         return Err("cannot create native session socket".to_owned());
     }
     let owned = unsafe { OwnedFd::from_raw_fd(raw) };
-    if unsafe { libc::fcntl(raw, libc::F_SETFD, libc::FD_CLOEXEC) } < 0
+    if custody::set_cloexec(raw).is_err()
         || unsafe { libc::fcntl(raw, libc::F_SETFL, libc::O_NONBLOCK) } < 0
     {
         return Err("cannot configure native session socket".to_owned());

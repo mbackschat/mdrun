@@ -61,7 +61,8 @@ pub fn execute(action: &Action, workdir: Option<&Path>) -> Result<i32, String> {
         } => {
             let code = text_arg(code.as_deref())?;
             require_file(path)?;
-            let (output, status) = run_code(lang.as_bytes(), &code, workdir)?;
+            let (output, status) = run_code(lang.as_bytes(), &code, workdir)
+                .map_err(|error| format!("running code: {error}"))?;
             let doc = read(path)?;
             let rendered = [
                 document::render_code(lang.as_bytes(), &code, false),
@@ -199,12 +200,8 @@ pub fn execute(action: &Action, workdir: Option<&Path>) -> Result<i32, String> {
                     is_image: false,
                 } = &block.kind
                 {
-                    let (actual, _) = run_code(lang, code, workdir).map_err(|error| {
-                        format!(
-                            "executing block {index}: {}",
-                            error.strip_prefix("running code: ").unwrap_or(&error)
-                        )
-                    })?;
+                    let (actual, _) = run_code(lang, code, workdir)
+                        .map_err(|error| format!("executing block {index}: {error}"))?;
                     if let Some(next) = doc.blocks.get(index + 1)
                         && let BlockKind::Output { content } = &next.kind
                         && *content != actual
@@ -394,12 +391,7 @@ fn interpreter(lang: &[u8]) -> Result<PathBuf, String> {
 }
 
 fn run_code(lang: &[u8], code: &[u8], workdir: Option<&Path>) -> Result<(Vec<u8>, i32), String> {
-    let context = |error: String| {
-        format!(
-            "running code: executing {}: {error}",
-            String::from_utf8_lossy(lang)
-        )
-    };
+    let context = |error: String| format!("executing {}: {error}", String::from_utf8_lossy(lang));
     let program = interpreter(lang).map_err(context)?;
     let (mut reader, writer) = io::pipe().map_err(|error| context(error.to_string()))?;
     let writer_error = writer

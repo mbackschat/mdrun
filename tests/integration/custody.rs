@@ -1,3 +1,4 @@
+use crate::ports::excluded;
 use serde_json::{Value, json};
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
@@ -423,15 +424,6 @@ fn selected_listener_endpoint_stays_reserved_until_custodian_handoff() {
     assert!(excluded(address));
     controller.finish();
     assert!(!excluded(address));
-}
-fn excluded(address: SocketAddr) -> bool {
-    match crate::ports::bind(address) {
-        Ok(_) => false,
-        Err(error) => {
-            assert_eq!(error.kind(), std::io::ErrorKind::AddrInUse);
-            true
-        }
-    }
 }
 fn os(value: impl AsRef<[u8]>) -> Value {
     json!({"Unix":value.as_ref()})

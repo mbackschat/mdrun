@@ -149,29 +149,19 @@ impl NativeContext {
         if self.umask != baseline.umask {
             return Some("umask");
         }
-        let actual: BTreeMap<_, _> = self
-            .environment
-            .iter()
-            .filter(|(key, _)| {
-                !binding
-                    .warm_ignore_env
-                    .iter()
-                    .any(|name| key == name.as_str())
-            })
-            .map(|(key, value)| (key, value))
-            .collect();
-        let expected: BTreeMap<_, _> = baseline
-            .environment
-            .iter()
-            .filter(|(key, _)| {
-                !binding
-                    .warm_ignore_env
-                    .iter()
-                    .any(|name| key == name.as_str())
-            })
-            .map(|(key, value)| (key, value))
-            .collect();
-        if actual != expected {
+        fn compared<'e>(
+            environment: &'e [(OsString, OsString)],
+            ignored: &[String],
+        ) -> BTreeMap<&'e OsString, &'e OsString> {
+            environment
+                .iter()
+                .filter(|(key, _)| !ignored.iter().any(|name| key == name.as_str()))
+                .map(|(key, value)| (key, value))
+                .collect()
+        }
+        if compared(&self.environment, &binding.warm_ignore_env)
+            != compared(&baseline.environment, &binding.warm_ignore_env)
+        {
             return Some("environment");
         }
         None

@@ -1,8 +1,9 @@
+use crate::ports::excluded;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::fs;
 use std::io;
-use std::net::{SocketAddr, TcpListener};
+use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -145,16 +146,6 @@ pub(super) fn read_json(path: &Path) -> Value {
 
 fn read_process(directory: &Path, name: &str) -> Process {
     serde_json::from_slice(&fs::read(directory.join(name)).unwrap()).unwrap()
-}
-
-pub(super) fn excluded(address: SocketAddr) -> bool {
-    match crate::ports::bind(address) {
-        Ok(_) => false,
-        Err(error) => {
-            assert_eq!(error.kind(), io::ErrorKind::AddrInUse);
-            true
-        }
-    }
 }
 
 pub(super) struct Run {

@@ -1,5 +1,5 @@
 use super::broker::{CustodyAccess, CustodyBroker};
-use super::config::Binding;
+use super::config::{Binding, cleanup_grace};
 use super::context::{NativeContext, SESSION_ENV};
 use super::custody::{Custody, CustodyConfig, CustodyEvent, SpawnSpec};
 use super::host::{AuthorStdio, PreparedSession, SessionOutcome, run_prepared};
@@ -108,14 +108,6 @@ fn session_options(options: &Options) -> SessionOptions {
         report: None,
         require_warm: options.require_warm,
     }
-}
-
-fn cleanup_grace(milliseconds: u64) -> Result<Duration, String> {
-    milliseconds
-        .checked_mul(2)
-        .and_then(|value| value.checked_add(500))
-        .map(Duration::from_millis)
-        .ok_or_else(|| "batch cleanup budget is not representable".to_owned())
 }
 
 fn batch_budget(
@@ -432,7 +424,8 @@ pub fn run(options: &Options, files: &[PathBuf], workdir: Option<&Path>) -> Resu
         options.jobs.get().min(files.len())
     };
     let session = Duration::from_millis(binding.session_timeout_ms);
-    let cleanup = cleanup_grace(binding.cleanup_timeout_ms)?;
+    let cleanup = cleanup_grace(binding.cleanup_timeout_ms)
+        .ok_or("batch cleanup budget is not representable")?;
     let budget = batch_budget(files.len(), jobs, session, cleanup)?;
     let executable = std::env::current_exe().map_err(|_| "cannot locate native executable")?;
     // Validate the fixed execution context before any custody or coordinator thread starts.
@@ -750,7 +743,7 @@ mod tests {
             batch_budget(5, 2, Duration::from_secs(10), Duration::from_secs(3)).unwrap(),
             Duration::from_secs(42)
         );
-        assert!(cleanup_grace(u64::MAX).is_err());
+        assert!(cleanup_grace(u64::MAX).is_none());
         assert!(batch_budget(2, 1, Duration::MAX, Duration::from_secs(1)).is_err());
     }
 

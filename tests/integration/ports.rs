@@ -137,6 +137,17 @@ pub(super) fn bind(address: SocketAddr) -> std::io::Result<TcpListener> {
     TcpListener::bind(address)
 }
 
+/// Reports whether something still holds `address`; any bind failure other than `AddrInUse` fails the test.
+pub(super) fn excluded(address: SocketAddr) -> bool {
+    match bind(address) {
+        Ok(_) => false,
+        Err(error) => {
+            assert_eq!(error.kind(), std::io::ErrorKind::AddrInUse);
+            true
+        }
+    }
+}
+
 pub(super) fn diagnostics(address: SocketAddr) -> String {
     #[cfg(target_os = "linux")]
     {

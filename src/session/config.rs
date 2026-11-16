@@ -3,6 +3,7 @@ use std::fmt;
 use std::fs;
 use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -71,6 +72,16 @@ fn session_timeout() -> u64 {
 
 fn cleanup_timeout() -> u64 {
     6_000
+}
+
+/// How long an owner waits for custody release after stopping: twice the per-group cleanup budget plus a fixed margin.
+///
+/// The session host waits exactly this long, and batch sizes each wave's lifetime from the same value, so the two must not diverge.
+pub(super) fn cleanup_grace(cleanup_timeout_ms: u64) -> Option<Duration> {
+    cleanup_timeout_ms
+        .checked_mul(2)
+        .and_then(|value| value.checked_add(500))
+        .map(Duration::from_millis)
 }
 
 impl Binding {
