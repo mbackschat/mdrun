@@ -1767,12 +1767,46 @@ mod tests {
         let received = receive_fds(&receiver, 1).unwrap();
         drop(file);
         assert_eq!(
-            unsafe { libc::fcntl(received[0].as_raw_fd(), libc::F_GETFL) },
-            original_flags
+            descriptor_behavior_flags(unsafe {
+                libc::fcntl(received[0].as_raw_fd(), libc::F_GETFL)
+            }),
+            descriptor_behavior_flags(original_flags)
         );
         assert_ne!(
             unsafe { libc::fcntl(received[0].as_raw_fd(), libc::F_GETFD) } & libc::FD_CLOEXEC,
             0
         );
+    }
+
+    fn descriptor_behavior_flags(flags: i32) -> i32 {
+        // Darwin's FMARK/FWASWRITTEN are kernel bookkeeping, not descriptor behavior.
+        // https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/fcntl.h
+        #[cfg(target_os = "macos")]
+        return flags & !0x0001_1000;
+        #[cfg(not(target_os = "macos"))]
+        flags
+    }
+
+    #[test]
+    fn descriptor_flag_projection_preserves_access_append_sync_and_nonblocking() {
+        for flag in [
+            libc::O_WRONLY,
+            libc::O_RDWR,
+            libc::O_APPEND,
+            libc::O_SYNC,
+            libc::O_NONBLOCK,
+        ] {
+            assert_ne!(
+                descriptor_behavior_flags(0),
+                descriptor_behavior_flags(flag)
+            );
+        }
+        #[cfg(target_os = "macos")]
+        assert_eq!(
+            descriptor_behavior_flags(libc::O_RDWR | 0x0001_1000),
+            descriptor_behavior_flags(libc::O_RDWR)
+        );
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(descriptor_behavior_flags(0x0001_1000), 0x0001_1000);
     }
 }
