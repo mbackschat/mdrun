@@ -201,6 +201,86 @@ fn caught_invalidation_and_retained_operations_fail_the_session() {
 
 #[test]
 #[ignore = "requires a prepared Python runtime selected by MDRUN_PYTHON"]
+fn zero_worker_exit_after_an_accepted_effect_never_retries_cold() {
+    for command in ["system_exit_zero", "abrupt_exit_zero"] {
+        let cold = fixture();
+        let output = cold.run(&["--mode", "cold"], &["tool", command, "effect"]);
+        assert!(output.status.success(), "cold {command}");
+        assert!(output.stdout.is_empty(), "cold {command}");
+        assert_eq!(fs::read(cold.0.join("effect")).unwrap(), b"cold\n");
+        let report = cold.report();
+        assert_eq!(report["cold_calls"], 1);
+        assert_eq!(report["warm_calls"], 0);
+        assert_eq!(report["worker_starts"], 0);
+        assert_eq!(report["application_statuses"][0]["exit_code"], 0);
+        assert_eq!(report["infrastructure_failure"], Value::Null);
+        assert_eq!(report["cleanup"]["outcome"], "clean");
+        let fixture = fixture();
+        let output = fixture.run(&[], &["tool", command, "effect"]);
+        assert!(!output.status.success(), "{command}");
+        assert!(output.stdout.is_empty(), "{command}");
+        assert_eq!(
+            fs::read(fixture.0.join("effect")).unwrap(),
+            b"warm\n",
+            "{command}"
+        );
+        let report = fixture.report();
+        assert_eq!(report["warm_calls"], 1, "{command}");
+        assert_eq!(report["cold_calls"], 0, "{command}");
+        assert_eq!(report["worker_starts"], 1, "{command}");
+        assert_eq!(report["application_statuses"], json!([]), "{command}");
+        assert_eq!(report["outcome"], "failure", "{command}");
+        assert!(
+            report["infrastructure_failure"]
+                .as_str()
+                .is_some_and(|reason| !reason.is_empty()),
+            "{command}"
+        );
+        assert_eq!(report["cleanup"]["outcome"], "clean", "{command}");
+    }
+}
+
+#[test]
+#[ignore = "requires a prepared Python runtime selected by MDRUN_PYTHON"]
+fn application_owned_thread_reset_distinguishes_joined_and_retained_work() {
+    for command in ["owned_joined", "owned_live"] {
+        let fixture = fixture();
+        let output = fixture.run(&["--require-warm"], &["tool", command, "owned"]);
+        let joined = command == "owned_joined";
+        assert_eq!(output.status.success(), joined, "{command}");
+        assert!(output.stdout.is_empty(), "{command}");
+        assert_eq!(
+            fs::read(fixture.0.join("owned")).unwrap(),
+            if joined {
+                &b"started\nreset clean\nclosed\n"[..]
+            } else {
+                &b"started\nreset rejected\nclosed\n"[..]
+            },
+            "{command}"
+        );
+        let report = fixture.report();
+        assert_eq!(report["warm_calls"], 1);
+        assert_eq!(report["cold_calls"], 0);
+        assert_eq!(report["worker_starts"], 1);
+        assert_eq!(report["cleanup"]["outcome"], "clean");
+        if joined {
+            assert_eq!(report["outcome"], "success");
+            assert_eq!(report["infrastructure_failure"], Value::Null);
+            assert_eq!(report["application_statuses"][0]["exit_code"], 0);
+        } else {
+            assert_eq!(report["outcome"], "failure");
+            assert_eq!(report["application_statuses"], json!([]));
+            assert!(
+                report["infrastructure_failure"]
+                    .as_str()
+                    .is_some_and(|reason| !reason.is_empty())
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires a prepared Python runtime selected by MDRUN_PYTHON"]
 fn unused_open_stdin_finishes_without_waiting_for_eof() {
     let fixture = fixture();
     let mut command = Command::new(env!("CARGO_BIN_EXE_mdrun"));

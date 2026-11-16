@@ -11,9 +11,11 @@ import threading
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "sdk" / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "sdk" / "python" / "examples"))
 
 from mdrun_sdk import Application, Eligible, Refused, WorkerError, run_worker
 import mdrun_sdk
+from owned_thread import OwnedThreadApplication
 
 
 retained = None
@@ -47,6 +49,8 @@ class Fixture(Application):
             "mdrun-data", "mdrun-control", "mdrun-execution"
         }
         self.execution = threading.current_thread()
+        self.owned = OwnedThreadApplication()
+        self.owned_markers = []
         if os.environ.get("MDRUN_PYTHON_FIXTURE") == "initialization_failure":
             raise RuntimeError("private initialization detail")
 
@@ -83,6 +87,23 @@ class Fixture(Application):
             raise RuntimeError("private callback detail")
         elif command == "bad_status":
             return True
+        elif command in ("system_exit_zero", "abrupt_exit_zero"):
+            with Path(request.argv[1]).open("ab") as effect:
+                effect.write(b"warm\n")
+            if command == "system_exit_zero":
+                raise SystemExit(0)
+            os._exit(0)
+        elif command in ("owned_joined", "owned_live", "owned_expired"):
+            marker = Path(request.argv[1])
+            self.owned_markers.append(marker)
+            self.owned.invoke(request)
+            marker.write_bytes(b"started\n")
+            if command == "owned_expired":
+                # Waiting without signalling proves reset rejects expiry even after the actor dies.
+                self.owned.thread.join(6)
+                assert not self.owned.thread.is_alive()
+                with marker.open("ab") as evidence:
+                    evidence.write(b"expired\n")
         elif command == "blocked_input":
             request.stdin.read(1)
         elif command == "blocked_output":
@@ -180,11 +201,25 @@ class Fixture(Application):
         assert threading.current_thread() is self.execution
         assert all(thread in self.baseline for thread in threading.enumerate()
                    if thread.name.startswith("mdrun-"))
+        if request.argv[0] in ("owned_joined", "owned_live", "owned_expired"):
+            marker = Path(request.argv[1])
+            try:
+                self.owned.reset(request)
+            except BaseException:
+                with marker.open("ab") as evidence:
+                    evidence.write(b"reset rejected\n")
+                raise
+            with marker.open("ab") as evidence:
+                evidence.write(b"reset clean\n")
         if request.argv[0] == "resetfail":
             raise RuntimeError("private reset detail")
 
     def close(self):
         assert threading.current_thread() is self.execution
+        self.owned.close()
+        for marker in self.owned_markers:
+            with marker.open("ab") as evidence:
+                evidence.write(b"closed\n")
         if os.environ.get("MDRUN_PYTHON_FIXTURE") == "close_failure":
             raise RuntimeError("private close detail")
 

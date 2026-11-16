@@ -14,6 +14,11 @@ import threading
 import time
 import unittest
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "sdk" / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "sdk" / "python" / "examples"))
+
+from owned_thread import OwnedThreadApplication
+
 
 def receive(connection):
     def exact(size):
@@ -212,6 +217,55 @@ class PythonProtocol(unittest.TestCase):
             self.assert_fault(host, "initialization_failed")
         with Host("close_failure").ready() as host:
             self.assertEqual(host.shutdown(), 70)
+
+    def test_owned_thread_is_joined_before_successful_reset_and_reuse(self):
+        with self.host() as host:
+            markers = []
+            for index in range(2):
+                marker = Path(host.directory.name) / f"joined-{index}"
+                markers.append(marker)
+                host.invoke("owned_joined", str(index), str(marker))
+                self.assertEqual(receive(host.data), {"kind": "complete", "request_id": str(index), "exit_code": 0})
+                host.release(str(index))
+                self.assertEqual(marker.read_bytes(), b"started\nreset clean\n")
+            self.assertEqual(host.shutdown(), 0)
+            for marker in markers:
+                self.assertEqual(marker.read_bytes(), b"started\nreset clean\nclosed\n")
+
+    def test_owned_reset_rejects_a_retained_nonlive_handle_until_ownership_is_cleared(self):
+        application = OwnedThreadApplication()
+        # An unstarted Thread supplies a non-live handle without launching an actor;
+        # liveness alone must not certify that application ownership was released.
+        application.thread = threading.Thread()
+        self.assertFalse(application.thread.is_alive())
+        with self.assertRaisesRegex(RuntimeError, "owned work"):
+            application.reset(None)
+        application.thread = None
+        application.reset(None)
+
+    def test_owned_live_or_expired_thread_prevents_completion_and_close_checks_ownership(self):
+        for command in ("owned_live", "owned_expired"):
+            with self.subTest(command=command), self.host() as host:
+                marker = Path(host.directory.name) / "owned"
+                host.invoke(command, "one", str(marker))
+                if command == "owned_expired":
+                    host.data.settimeout(7)
+                self.assert_fault(host, "reset_failed")
+                expected = b"started\n" + (b"expired\n" if command == "owned_expired" else b"") + b"reset rejected\nclosed\n"
+                self.assertEqual(marker.read_bytes(), expected)
+
+    def test_zero_exit_controls_cannot_be_application_completion(self):
+        for command in ("system_exit_zero", "abrupt_exit_zero"):
+            with self.subTest(command=command), self.host() as host:
+                effect = Path(host.directory.name) / "effect"
+                host.invoke(command, "one", str(effect))
+                if command == "system_exit_zero":
+                    self.assert_fault(host, "invocation_failed")
+                else:
+                    with self.assertRaises((EOFError, ConnectionResetError)):
+                        receive(host.data)
+                    self.assertEqual(host.process.wait(timeout=2), 0)
+                self.assertEqual(effect.read_bytes(), b"warm\n")
 
     def test_orderly_shutdown_restores_hooks_and_refuses_a_second_lifetime(self):
         with self.host() as host:
