@@ -40,6 +40,8 @@ Use rustfmt, four-space indentation, `snake_case` functions/modules and `PascalC
 
 Never retry an accepted invocation. Keep command failure separate from infrastructure or cleanup failure; shell masking must not make a poisoned session successful. Preserve byte fidelity in transport separately from Markdown representation. Do not promote `spike/1` to the production protocol without the stream, context and ownership qualification in the plans.
 
+Use stable Rust dependency releases published at least 14 days before adoption; check registry dates for all resolved direct/transitive versions before compiling build scripts or proc macros. Avoid prereleases/yanked versions and retain exact resolutions in Cargo.lock. Security alerts and fix PRs must not wait for the cooldown. A verified security fix may use an explicit exact-version exception with advisory, reviewed upstream change, rationale, tests and expiry in [.github/dependency-exceptions.json](.github/dependency-exceptions.json); never bypass the rule for every security-labelled PR or auto-merge updates. Run `python3 scripts/dependency_policy.py` before accepting dependency changes.
+
 ## Documentation and evidence
 
 Use one paragraph per physical line and regular Markdown links. Keep indexes as compact tables or task lists. Update the owner of a changed guarantee and affected entry points in the same change; update PLAN when scope, decisions, acceptance or milestone status changes. Keep proposed contracts distinct from supported behavior.

@@ -17,6 +17,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+      - name: Check dependency quarantine before compilation
+        run: python3 scripts/dependency_policy.py
       - name: Install Rust checks
         run: rustup toolchain install stable --profile minimal --component rustfmt,clippy && rustup default stable
       - run: cargo fmt --all --check
@@ -25,6 +27,7 @@ jobs:
       - run: cargo build --release --locked
       - run: python3 -m unittest discover -s packaging -p 'test_*.py'
       - run: python3 -m unittest discover -s tests/compatibility -p 'test_*.py'
+      - run: python3 -m unittest discover -s tests/tooling -p 'test_*.py'
       - name: Check contributor entry point
         run: test -L AGENTS.md && test "$(readlink AGENTS.md)" = CLAUDE.md
 

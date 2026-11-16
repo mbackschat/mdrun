@@ -9,6 +9,7 @@ Current status: repository bootstrap, 2026-11-16. Production document execution 
 | [Active plans](plans/README.md) | Detailed compatibility and consumer qualification |
 | [Deferred work](DEFERRED.md) | Unscheduled scope and reopening conditions |
 | [Distribution](distribution.md) | Release targets, artifacts, Homebrew and Linux package qualification |
+| [Security](security.md) | Dependency quarantine, security-fix exceptions and GitHub scanning |
 | [Research](research/README.md) | Extracted conclusions and source provenance |
 
 Contributor instructions live in [CLAUDE.md](../CLAUDE.md); user entry points live in [README.md](../README.md). Avoid duplicating detailed contracts across navigation documents.
