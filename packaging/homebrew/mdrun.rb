@@ -32,6 +32,7 @@ class Mdrun < Formula
       system "cargo", "install", *std_cargo_args
       man1.install Dir["docs/man/*.1"]
     else
+      prefix.install "TOOLCHAIN_NOTICES.txt"
       bin.install "mdrun"
       man1.install Dir["share/man/man1/*.1"]
     end

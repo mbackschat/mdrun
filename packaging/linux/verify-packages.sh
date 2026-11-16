@@ -18,12 +18,12 @@ for package in "$directory"/*.deb "$directory"/*.rpm; do
         *.deb)
             found_deb=1
             docker run --rm --platform "$platform" -v "$directory:/packages:ro" -v "$script_directory/../smoke.sh:/package-smoke.sh:ro" -v "$script_directory/../../docs/man:/expected-man:ro" debian:13-slim \
-                sh -euc 'dpkg -i "/packages/$1"; env -i /usr/bin/mdrun --version; sh /package-smoke.sh /usr/bin/mdrun; test -s /usr/share/doc/mdrun/THIRD_PARTY_NOTICES.txt; for page in /expected-man/*.1; do name=${page##*/}; test -s "/usr/share/man/man1/$name" || test -s "/usr/share/man/man1/$name.gz"; done; dpkg-query -L mdrun | grep /usr/share/doc/mdrun/LICENSE; dpkg -r mdrun; test ! -e /usr/bin/mdrun' sh "$name"
+                sh -euc 'dpkg -i "/packages/$1"; env -i /usr/bin/mdrun --version; sh /package-smoke.sh /usr/bin/mdrun; test -s /usr/share/doc/mdrun/THIRD_PARTY_NOTICES.txt; test -s /usr/share/doc/mdrun/TOOLCHAIN_NOTICES.txt; for page in /expected-man/*.1; do name=${page##*/}; test -s "/usr/share/man/man1/$name" || test -s "/usr/share/man/man1/$name.gz"; done; dpkg-query -L mdrun | grep /usr/share/doc/mdrun/LICENSE; dpkg -r mdrun; test ! -e /usr/bin/mdrun' sh "$name"
             ;;
         *.rpm)
             found_rpm=1
             docker run --rm --platform "$platform" -v "$directory:/packages:ro" -v "$script_directory/../smoke.sh:/package-smoke.sh:ro" -v "$script_directory/../../docs/man:/expected-man:ro" fedora:43 \
-                sh -euc 'rpm -i "/packages/$1"; env -i /usr/bin/mdrun --version; sh /package-smoke.sh /usr/bin/mdrun; test -s /usr/share/licenses/mdrun/THIRD_PARTY_NOTICES.txt; test -s /usr/share/licenses/mdrun/LICENSE; for page in /expected-man/*.1; do name=${page##*/}; test -s "/usr/share/man/man1/$name" || test -s "/usr/share/man/man1/$name.gz"; done; rpm -e mdrun; test ! -e /usr/bin/mdrun' sh "$name"
+                sh -euc 'rpm -i "/packages/$1"; env -i /usr/bin/mdrun --version; sh /package-smoke.sh /usr/bin/mdrun; test -s /usr/share/licenses/mdrun/THIRD_PARTY_NOTICES.txt; test -s /usr/share/licenses/mdrun/TOOLCHAIN_NOTICES.txt; test -s /usr/share/licenses/mdrun/LICENSE; for page in /expected-man/*.1; do name=${page##*/}; test -s "/usr/share/man/man1/$name" || test -s "/usr/share/man/man1/$name.gz"; done; rpm -e mdrun; test ! -e /usr/bin/mdrun' sh "$name"
             ;;
     esac
 done

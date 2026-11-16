@@ -23,7 +23,7 @@ class DistributionTests(unittest.TestCase):
             binary.parent.mkdir(parents=True)
             binary.write_bytes(b"independent-binary-fixture\x00\xff")
             binary.chmod(0o755)
-            for name in ("README.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTICES.txt"):
+            for name in ("README.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTICES.txt", "TOOLCHAIN_NOTICES.txt"):
                 (root / name).write_text(name)
             man = root / "docs/man"
             man.mkdir(parents=True)
@@ -38,12 +38,13 @@ class DistributionTests(unittest.TestCase):
             with tarfile.open(archive) as result:
                 self.assertEqual(
                     set(result.getnames()),
-                    {f"{prefix}/{name}" for name in ("mdrun", "README.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTICES.txt")}
+                    {f"{prefix}/{name}" for name in ("mdrun", "README.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTICES.txt", "TOOLCHAIN_NOTICES.txt")}
                     | {f"{prefix}/share/man/man1/{name}" for name in pages},
                 )
                 self.assertEqual(result.extractfile(f"{prefix}/mdrun").read(), binary.read_bytes())
                 self.assertEqual(result.getmember(f"{prefix}/mdrun").mode & 0o111, 0o111)
                 self.assertEqual(result.extractfile(f"{prefix}/THIRD_PARTY_NOTICES.txt").read(), b"THIRD_PARTY_NOTICES.txt")
+                self.assertEqual(result.extractfile(f"{prefix}/TOOLCHAIN_NOTICES.txt").read(), b"TOOLCHAIN_NOTICES.txt")
                 for name, content in pages.items():
                     self.assertEqual(result.extractfile(f"{prefix}/share/man/man1/{name}").read(), content)
 
@@ -54,7 +55,7 @@ class DistributionTests(unittest.TestCase):
             binary = root / "target" / target / "release" / "mdrun"
             binary.parent.mkdir(parents=True)
             binary.write_bytes(b"binary")
-            for name in ("README.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTICES.txt"):
+            for name in ("README.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTICES.txt", "TOOLCHAIN_NOTICES.txt"):
                 (root / name).write_text(name)
             man = root / "docs/man"
             man.mkdir(parents=True)

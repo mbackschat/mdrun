@@ -7,6 +7,10 @@ on:
   pull_request:
     paths:
       - .github/workflows/release.yml
+      - .github/workflows/qualification.yml
+      - sdk/**
+      - scripts/prepare_sdk.py
+      - scripts/prepare_jvm.py
       - packaging/**
       - Cargo.toml
       - Cargo.lock
@@ -15,6 +19,9 @@ permissions:
   contents: read
 
 jobs:
+  qualification:
+    uses: ./.github/workflows/qualification.yml
+
   build:
     strategy:
       fail-fast: false
@@ -32,6 +39,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
       - name: Check locked crate notices
         run: python3 packaging/notices.py check
       - name: Check dependency quarantine before compilation
@@ -39,7 +48,9 @@ jobs:
       - name: Require the release tag to match the crate
         if: github.event_name == 'push'
         run: test "$GITHUB_REF_NAME" = "v$(python3 packaging/distribution.py version)"
-      - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy --target ${{ matrix.target }} && rustup default stable
+      - run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy --target ${{ matrix.target }} && rustup default 1.98.1
+      - name: Verify and preserve audited toolchain attribution
+        run: python3 packaging/toolchain.py generate
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
@@ -47,6 +58,8 @@ jobs:
       - run: cargo build --release --locked --target ${{ matrix.target }}
       - name: Package native archive
         run: python3 packaging/distribution.py archive "${{ matrix.target }}" dist
+      - name: Record exact compiler and linked runtime inputs
+        run: python3 packaging/toolchain.py record --target "${{ matrix.target }}" --source-revision "$GITHUB_SHA" --output "dist/mdrun-build-${{ matrix.target }}.json"
       - name: Verify archived standalone executable
         run: |
           mkdir target/package-smoke
@@ -71,22 +84,74 @@ jobs:
           sh packaging/linux/verify-packages.sh "$PWD/dist"
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.target }}
+          name: native-${{ matrix.target }}
           path: dist/
           if-no-files-found: error
 
-  assemble:
+  sdk:
     needs: build
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26.10.0'
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
       - uses: actions/download-artifact@v8
         with:
+          name: native-x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/native-host
+      - name: Extract the release host for SDK consumers
+        run: |
+          mkdir "$RUNNER_TEMP/sdk-host"
+          tar -xzf "$RUNNER_TEMP/native-host/mdrun-v$(python3 packaging/distribution.py version)-x86_64-unknown-linux-musl.tar.gz" -C "$RUNNER_TEMP/sdk-host"
+          echo "MDRUN_SDK_HOST=$RUNNER_TEMP/sdk-host/mdrun-v$(python3 packaging/distribution.py version)-x86_64-unknown-linux-musl/mdrun" >> "$GITHUB_ENV"
+      - name: Build versioned runtime SDK archives
+        run: |
+          python3 scripts/prepare_jvm.py --java-home "$JAVA_HOME" --download --output "$RUNNER_TEMP/jvm-sdk"
+          python3 packaging/sdk.py archive jvm dist --jvm-prepared "$RUNNER_TEMP/jvm-sdk"
+          python3 packaging/sdk.py archive node dist
+          python3 packaging/sdk.py archive python dist
+          cp scripts/prepare_sdk.py dist/prepare_sdk.py
+      - name: Qualify pinned SDK installation outside the checkout
+        run: |
+          python3 packaging/qualify_sdk.py --archives dist --version "$(python3 packaging/distribution.py version)" --java-home "$JAVA_HOME" --node "$(command -v node)" --python "$(command -v python3)" --mdrun "$MDRUN_SDK_HOST" --output "$RUNNER_TEMP/sdk-consumer"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sdk-assets
+          path: dist/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: sdk-consumption
+          path: ${{ runner.temp }}/sdk-consumer
+          if-no-files-found: error
+
+  assemble:
+    needs: [build, sdk]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
           merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: sdk-assets
           path: dist
       - name: Generate checksums and Homebrew formula
         run: |
-          (cd dist && sha256sum mdrun-*.tar.gz mdrun*.deb mdrun*.rpm > SHA256SUMS)
+          (cd dist && sha256sum mdrun-*.tar.gz mdrun*.deb mdrun*.rpm mdrun-build-*.json prepare_sdk.py > SHA256SUMS)
           python3 packaging/distribution.py formula "$(python3 packaging/distribution.py version)" dist/SHA256SUMS > dist/mdrun.rb
           ruby -c dist/mdrun.rb
       - uses: actions/upload-artifact@v7
@@ -96,7 +161,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: assemble
+    needs: [assemble, qualification]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
@@ -108,6 +173,6 @@ jobs:
           path: dist
       - name: Publish verified assets
         working-directory: dist
-        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes mdrun-*.tar.gz mdrun*.deb mdrun*.rpm SHA256SUMS mdrun.rb
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes mdrun-*.tar.gz mdrun*.deb mdrun*.rpm mdrun-build-*.json prepare_sdk.py SHA256SUMS mdrun.rb
         env:
           GH_TOKEN: ${{ github.token }}

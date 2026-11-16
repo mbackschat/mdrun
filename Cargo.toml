@@ -2,6 +2,7 @@
 name = "mdrun"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.98"
 description = "Create, run, and verify executable Markdown documents"
 license = "MIT"
 repository = "https://github.com/mbackschat/mdrun"
@@ -18,6 +19,7 @@ assets = [
     ["CHANGELOG.md", "usr/share/doc/mdrun/", "644"],
     ["LICENSE", "usr/share/doc/mdrun/", "644"],
     ["THIRD_PARTY_NOTICES.txt", "usr/share/doc/mdrun/", "644"],
+    ["TOOLCHAIN_NOTICES.txt", "usr/share/doc/mdrun/", "644"],
     ["docs/man/*.1", "usr/share/man/man1/", "644"],
 ]
 
@@ -29,6 +31,7 @@ assets = [
     { source = "CHANGELOG.md", dest = "/usr/share/doc/mdrun/CHANGELOG.md", mode = "644", doc = true },
     { source = "LICENSE", dest = "/usr/share/licenses/mdrun/LICENSE", mode = "644" },
     { source = "THIRD_PARTY_NOTICES.txt", dest = "/usr/share/licenses/mdrun/THIRD_PARTY_NOTICES.txt", mode = "644" },
+    { source = "TOOLCHAIN_NOTICES.txt", dest = "/usr/share/licenses/mdrun/TOOLCHAIN_NOTICES.txt", mode = "644" },
     { source = "docs/man/*.1", dest = "/usr/share/man/man1/", mode = "644", doc = true },
 ]
 
