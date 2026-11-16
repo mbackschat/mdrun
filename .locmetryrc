@@ -1,0 +1,35 @@
+version = 1
+
+[scope]
+# Build output and dependency directories already follow .gitignore and defaults.
+# Generated manuals and third-party notice outputs are outside the source inventory.
+exclude = ["docs/man/**", "THIRD_PARTY_NOTICES.txt", "packaging/notices.json"]
+
+[[overrides]]
+id = "manual-generation-tooling"
+match = ["src/manual.rs"]
+purpose = "production"
+category = "tooling"
+reason = "Maintained man-page generation hosted in a test-only module, with freshness and rendering guards sharing the file"
+
+[[rules]]
+id = "runtime-sdk-source"
+match = ["sdk/node/*.mjs", "sdk/python/mdrun_sdk/**"]
+purpose = "production"
+category = "implementation"
+reason = "Maintained cooperative SDK implementations; the JVM SDK already has Maven module inference"
+
+[[rules]]
+id = "maintained-examples"
+match = ["sdk/*/examples/**"]
+purpose = "production"
+category = "example"
+reason = "Maintained SDK examples"
+
+[[rules]]
+id = "project-tooling"
+match = ["scripts/**", "packaging/**"]
+kind = ["source"]
+purpose = "production"
+category = "tooling"
+reason = "Maintained preparation, dependency, distribution and qualification tools; conventional tests retain their built-in classification"
