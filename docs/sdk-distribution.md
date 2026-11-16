@@ -6,13 +6,13 @@ The SDK is the library for that adapter. It does not supply your application, bu
 
 Choose the same exact host and SDK version for local and CI builds, and pin the downloaded asset hashes. For Python, install the wheel into the application's virtual environment. For Node and JVM, prepare a runtime archive; Python also supports the archive route. After preparation, follow your runtime's adapter guide and [verify the cold and warm routes](guides/sessions.md#verify-and-inspect-the-route).
 
-No product version has been published; publication is held for the owner's pre-release review. Release-download examples below describe the assets planned for a published version and cannot download the unpublished candidate. Verified local archives, wheels and CI artifacts can be prepared through the explicit local-file routes. The SDK APIs and managed sessions follow the frozen [version-1 contract](plans/session-protocol.md) for the 0.1.0 release candidate; Maven Central, npm and PyPI publication remain [deferred](DEFERRED.md). Unrelated packages named `mdrun` are not these SDKs.
+Choose an available version from [GitHub Releases](https://github.com/mbackschat/mdrun/releases) before using a release-download example below. Verified local archives, wheels and CI artifacts can also be prepared through the explicit local-file routes. The SDK APIs and managed sessions follow the frozen [version-1 contract](plans/session-protocol.md) for 0.1.0; Maven Central, npm and PyPI publication remain [deferred](DEFERRED.md). Unrelated packages named `mdrun` are not these SDKs.
 
 ## Install the Python SDK with uv
 
 Install the Python wheel into your application's virtual environment with uv. It is a library your adapter imports, so use `uv pip install` or a uv project dependency. Install the standalone `mdrun` host separately. The Python archive remains available for explicit prepared-module workflows.
 
-Choose an exact release version and pin its wheel URL and reviewed SHA-256 from `SHA256SUMS` in your application's requirements file. In the example below, you supply the absolute Python interpreter path and `MDRUN_PYTHON_SDK_SHA256`; uv creates `.venv`, and `printf` creates `mdrun-sdk.requirements.txt`. These commands use the current source version and become usable when that release is published:
+Choose an exact published release version and pin its wheel URL and reviewed SHA-256 from `SHA256SUMS` in your application's requirements file. In the example below, you supply the absolute Python interpreter path and `MDRUN_PYTHON_SDK_SHA256`; uv creates `.venv`, and `printf` creates `mdrun-sdk.requirements.txt`. The example selects version 0.1.0; use it only when that version's assets are available:
 
 ```sh
 uv venv --python /absolute/python3 .venv
@@ -36,7 +36,7 @@ python3 prepare_sdk.py --runtime node --version 0.1.0 \
   --sha256 "$MDRUN_NODE_SDK_SHA256" --download --output /prepared/mdrun-node
 ```
 
-You create `preparer.sha256` with the reviewed helper digest and filename in standard checksum format, and supply `MDRUN_NODE_SDK_SHA256` as the exact lowercase archive SHA-256 pinned by your application. `/prepared/mdrun-node` is an illustrative destination you choose; it must not already exist. The version above illustrates the current source version; it is usable only after that tag's assets are published. The helper downloads only `https://github.com/mbackschat/mdrun/releases/download/vVERSION/mdrun-sdk-RUNTIME-vVERSION.tar.gz`. GitHub's HTTPS asset redirect is supported, and the downloaded bytes must match the supplied digest before any output directory is created.
+You create `preparer.sha256` with the reviewed helper digest and filename in standard checksum format, and supply `MDRUN_NODE_SDK_SHA256` as the exact lowercase archive SHA-256 pinned by your application. `/prepared/mdrun-node` is an illustrative destination you choose; it must not already exist. Select an available release version and its matching digests. The helper downloads only `https://github.com/mbackschat/mdrun/releases/download/vVERSION/mdrun-sdk-RUNTIME-vVERSION.tar.gz`. GitHub's HTTPS asset redirect is supported, and the downloaded bytes must match the supplied digest before any output directory is created.
 
 For an archive already obtained through a verified release download or CI artifact, replace `--download` with `--archive /downloads/mdrun-sdk-node-v0.1.0.tar.gz`, using your actual downloaded file path. Use `--runtime jvm` or `--runtime python` with the matching versioned archive and digest. The destination must not exist. Preparation verifies runtime/version, the complete file inventory and every per-file hash, rejects links/traversal/duplicate entries, applies compressed/unpacked byte limits and publishes one prepared directory. It does not compile or invoke application code, fetch JVM dependencies, create a host binding or modify global module/class paths.
 
@@ -63,7 +63,7 @@ Preparation does not produce a running application. Implement classification, in
 
 Each archive has one `mdrun-sdk-RUNTIME-vVERSION` root. Runtime archives exclude tests, examples, application adapters, caches and source checkout paths. JVM SDK classes contain only the SDK package and the checked POM/project license; Jackson stays a separate unchanged jar with all five bundled notices retained. The [JVM lock](../sdk/jvm/dependencies.lock.json) identifies the canonical artifact, SHA-256, publication date and provenance. Registry metadata does not resolve or download dependencies during consumer preparation.
 
-The host, archive `VERSION` files and JVM POM use the exact [Cargo version](../Cargo.toml). GitHub Releases will carry these SDK assets alongside each corresponding host version.
+The host, archive `VERSION` files and JVM POM use the exact [Cargo version](../Cargo.toml). The release workflow packages these SDK assets alongside each corresponding host version.
 
 ## Reproduce and qualify SDK assets
 

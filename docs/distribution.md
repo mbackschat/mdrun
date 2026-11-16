@@ -1,16 +1,16 @@
 # Distribution and releases
 
-No product version has been released. This page separates the intended consumer packages from the maintainer work needed to publish them. Non-publishing qualification passes for the frozen 0.1.0 candidate at `bbe19d9`, dated 2026-11-16: native archives, Linux package installations and SDK consumption are qualified. Public downloads and actual Homebrew installation remain held.
+Choose an available version from [GitHub Releases](https://github.com/mbackschat/mdrun/releases). This page describes the consumer packages and maintainer publication gates. Non-publishing qualification passes for the frozen 0.1.0 candidate at `bbe19d9`, dated 2026-11-16: native archives, Linux package installations and SDK consumption are qualified. Public downloads and actual Homebrew installation require separate checks against published assets.
 
-The owner selected public GitHub hosting, MIT licensing, Homebrew and Linux packages, then requested a stop before publication. **Do not create release tags, publish GitHub assets or update the Homebrew tap until the owner resumes publication.** Local packaging and non-publishing qualification may continue.
+The owner selected public GitHub hosting, MIT licensing, Homebrew and Linux packages, and authorized publication on 2026-11-16 after the earlier pre-release hold. An authorized version tag must pass its complete release workflow before GitHub assets are published; Homebrew publication and installation retain the checks below.
 
 | Reader task | Start here |
 | --- | --- |
 | Check whether an intended package fits your system | [Targets and artifacts](#targets-and-artifacts) |
-| Pin the SDK used by your application | [SDK consumption guide](sdk-distribution.md); its release URLs become usable after publication |
+| Pin the SDK used by your application | [SDK consumption guide](sdk-distribution.md); select a published version and its reviewed digests |
 | Inspect the qualified candidate | [Artifact sizes and identities](#candidate-artifact-sizes) |
 | Reproduce a package as a maintainer | [Local build and packaging](#build-and-package-locally) |
-| Resume an authorized release | [Release gates](#before-the-first-release), then [publication and Homebrew](#publish-and-update-homebrew) |
+| Publish an authorized release | [Release gates](#before-the-first-release), then [publication and Homebrew](#publish-and-update-homebrew) |
 
 ## Targets and artifacts
 
@@ -60,7 +60,7 @@ The candidate Python wheel is 12,771 bytes, SHA-256 `d7d5d9c47a5f790f0923ff2317c
 
 ## Before the first release
 
-Use these gates when publication is authorized to resume. The current hold remains in force, including for release tags and tap updates.
+Publication is authorized. Complete these gates and retain exact-revision evidence; authorization and historical candidate checks do not establish a successful release.
 
 1. Complete the applicable [product qualification](PLAN.md) and retain passing compatibility/runtime/platform evidence before claiming supported warm execution or migration readiness.
 2. Pass the document smoke scenario against extracted archives, installed Linux packages and Homebrew on supported targets. Local helper success and configured CI are not installation evidence.
@@ -124,11 +124,11 @@ Linux builds install Ubuntu `musl-tools` and select `musl-gcc` for target C/asse
 
 The shared [package smoke scenario](../packaging/smoke.sh) runs the installed executable with an empty environment and PATH, using explicit system interpreter/command paths for the recorded program. It creates a document, adds a note, records literal output and verifies it; changed input must then fail verification without editing the document. An independent guard rejects a version-only stub.
 
-The release workflow passes this scenario against each candidate archive and installed Linux package. Homebrew's test implements the same author/replay/mismatch checks; actual Homebrew installation remains held until publication resumes.
+The release workflow passes this scenario against each candidate archive and installed Linux package. Homebrew's test implements the same author/replay/mismatch checks; record actual Homebrew installation separately after the release assets are available.
 
 ## Publish and update Homebrew
 
-This is the future publication workflow, to use only after the owner resumes publication. An approved version tag triggers it; all release builds must pass before GitHub publication. The workflow publishes three native archives, both Linux package formats for both architectures, Node/JVM/Python SDK archives, a standard Python wheel, the standalone `prepare_sdk.py` helper, per-target build identity records, `SHA256SUMS` and a rendered `mdrun.rb` formula. It does not modify another repository or require tap credentials in this repository.
+An authorized version tag triggers publication; all release builds must pass before GitHub publication. The workflow publishes three native archives, both Linux package formats for both architectures, Node/JVM/Python SDK archives, a standard Python wheel, the standalone `prepare_sdk.py` helper, per-target build identity records, `SHA256SUMS` and a rendered `mdrun.rb` formula. It does not modify another repository or require tap credentials in this repository.
 
 SDK consumption is a separate release gate. Qualification installs each archive by explicit version and SHA-256 into an isolated directory outside the checkout, then runs an independent cold application and actual cold/required-warm sessions through the packaged host. The Python wheel additionally passes `uv` installation and hash-refusal controls, plus actual cold/required-warm sessions from an isolated application environment. The [SDK consumption guide](sdk-distribution.md) explains pinned local and CI preparation. SDK registry publication remains deferred.
 
@@ -139,7 +139,7 @@ The [Homebrew template](../packaging/homebrew/mdrun.rb) uses prebuilt archives f
 3. Run `brew audit --strict mbackschat/tap/mdrun`, `brew install mbackschat/tap/mdrun` and `brew test mbackschat/tap/mdrun` on supported systems.
 4. Publish the tap update only after those checks pass.
 
-After the formula is published, the intended install command is `brew install mbackschat/tap/mdrun`. Linux users may alternatively download the matching archive or install the `.deb`/`.rpm` release package. No Homebrew formula or product release has been published yet.
+For a published formula, install with `brew install mbackschat/tap/mdrun`. Linux users may alternatively download the matching archive or install the `.deb`/`.rpm` package from an available [GitHub release](https://github.com/mbackschat/mdrun/releases). Verify the selected release's checksums before installation.
 
 ## Name and registry scope
 

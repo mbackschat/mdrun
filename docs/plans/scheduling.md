@@ -1,6 +1,6 @@
 # Independent document scheduling
 
-Status: implemented and qualified within the cooperative ownership boundary; the public contract below is frozen for the 0.1.0 release candidate and does not replace single-document `verify`. Publication remains held, and the native scope/broker interfaces described below remain revision-local implementation details. The [current execution checkpoint](execution.md#current-candidate-checkpoint) records the three-platform runtime evidence; the [history-cleanup qualification note](../PLAN.md#qualification-after-history-cleanup) applies to earlier results.
+Status: implemented and qualified within the cooperative ownership boundary; the public contract below is frozen for 0.1.0 and does not replace single-document `verify`. The native scope/broker interfaces described below remain revision-local implementation details. The [current execution checkpoint](execution.md#current-candidate-checkpoint) records the three-platform runtime evidence and separate publication gates; the [history-cleanup qualification note](../PLAN.md#qualification-after-history-cleanup) applies to earlier results.
 
 ## Public contract
 

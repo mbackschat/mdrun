@@ -10,7 +10,7 @@ The application supplies the normal CLI, the adapter and a binding JSON file ide
 
 Use the [versioned SDK download and preparation guide](../../docs/sdk-distribution.md) to pin a host/SDK version and archive digest for local and CI builds. The prepared directory supplies `index.mjs`, a dependency-free ESM module; import it explicitly in your worker bootstrap. The archive contains no application adapter, so you create that file. Keep the normal cold entry point SDK-free.
 
-The API follows the frozen [version-1 session contract](../../docs/plans/session-protocol.md) for the 0.1.0 release candidate. No product version has been published and publication is held; the distribution guide distinguishes future release downloads from verified local assets.
+The API follows the frozen [version-1 session contract](../../docs/plans/session-protocol.md) for 0.1.0. The distribution guide covers available GitHub release downloads and verified local assets.
 
 ## Implement an adapter
 

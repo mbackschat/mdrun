@@ -10,7 +10,7 @@ You supply the packaged CLI, the adapter and a binding JSON file identifying bot
 
 For consumer builds, use the [versioned SDK download and preparation guide](../../docs/sdk-distribution.md). The JVM archive already contains the prepared SDK and locked Jackson jars, POM, dependency provenance, licenses and hashes; a source checkout, Maven and a compiler are unnecessary to prepare that archive. A Java 21 runtime remains necessary to run a worker, and compiling your own adapter requires a Java 21 JDK. Pin the exact host/SDK version and archive digest in both local and CI builds.
 
-No product version has been published and publication is held. The distribution guide covers the future release-download route and preparation of verified local assets. The API follows the frozen [version-1 session contract](../../docs/plans/session-protocol.md) for the 0.1.0 release candidate.
+The distribution guide covers available GitHub release downloads and preparation of verified local assets. The API follows the frozen [version-1 session contract](../../docs/plans/session-protocol.md) for 0.1.0.
 
 ## Implement an adapter
 
@@ -119,7 +119,7 @@ Use `--download` instead of `--jackson-core` during preparation to request the e
 
 ## Qualification and evidence
 
-Each application still requires its own parity and resource qualification. The [execution checklist](../../docs/plans/execution.md) records runtime evidence and artifact checks for the frozen 0.1.0 candidate; publication remains held.
+Each application still requires its own parity and resource qualification. The [execution checklist](../../docs/plans/execution.md) records runtime evidence and artifact checks for 0.1.0.
 
 The [independent wire-peer suite](../../tests/runtime/jvm/qualify.py) exercises lazy input, active input without credit, nonzero reuse, refusal with an independent no-effects marker, pending-interrupt factory readiness, classification outcomes, output/status parity and reuse, multi-frame binary streams, fresh EOF, callback/reset failures, caught late I/O after shutdown, control loss during blocked input/output and sticky explicit invalidation while active, through retained requests and after orderly return with stalled shutdown hooks. The [preparation guards](../../tests/tooling/test_prepare_jvm.py) cover dependency age/hash/POM failures before compilation and an optional real-JDK SDK-only reproducibility check. These controls do not establish arbitrary application cleanup, cold descriptor parity, sustained slow-reader memory bounds, consumer migration or hosted macOS/Linux product qualification; record actual results in the execution checklist.
 

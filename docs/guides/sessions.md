@@ -4,7 +4,7 @@ A command-line application normally starts a new process for every call. In a wa
 
 Reusing a process also reuses its state. The application developer must supply an adapter that selects safe calls and checks that the worker is ready for the next one. mdrun manages the session around that adapter; it cannot make an arbitrary script safe to reuse. The [runnable Python example](../examples/warm-python.md) includes the application, adapter and setup so you can try the complete workflow before preparing your own.
 
-Managed sessions follow the frozen version-1 contract for the 0.1.0 release candidate. Release qualification is tracked in [PLAN](../PLAN.md); publication is held.
+Managed sessions follow the frozen version-1 contract for 0.1.0. Release qualification and publication gates are tracked in [PLAN](../PLAN.md).
 
 ## What you prepare
 

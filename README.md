@@ -4,7 +4,7 @@
 [![Release builds](https://github.com/mbackschat/mdrun/actions/workflows/release.yml/badge.svg)](https://github.com/mbackschat/mdrun/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-2024-orange.svg)](Cargo.toml)
-[![Status: release candidate](https://img.shields.io/badge/status-release%20candidate-yellow.svg)](docs/PLAN.md)
+[![GitHub release](https://img.shields.io/github/v/release/mbackschat/mdrun)](https://github.com/mbackschat/mdrun/releases)
 
 **Executable Markdown with warm JVM, Node and Python sessions.**
 
@@ -334,9 +334,9 @@ Block numbers are positions in the current document, not permanent identifiers; 
 
 ## Install and get help
 
-**0.1.0 release candidate:** there is no published product release yet, and publication is held at the owner's request. Document editing, replay, discovery, cooperative managed execution, native packages and SDK assets have passed macOS/Linux pre-release qualification. The public session and SDK version-1 contract is frozen; the [implementation plan](docs/PLAN.md) records the qualified revision and remaining publication gates. Application adapters still need their own parity and resource qualification.
+Choose an available version from [GitHub Releases](https://github.com/mbackschat/mdrun/releases). Prebuilt archives target macOS Apple Silicon and Linux x86_64/arm64; Linux also has `.deb` and `.rpm` packages. Check the release's `SHA256SUMS`, extract the matching archive and put its `mdrun` executable in a directory on your PATH, or install the matching Linux package. See [distribution](docs/distribution.md) for the supported platform matrix and Homebrew publication workflow.
 
-Build from source with Rust 1.98.1:
+To build from source, use Rust 1.98.1:
 
 ```sh
 git clone https://github.com/mbackschat/mdrun.git
@@ -346,9 +346,9 @@ cargo build --release --locked
 
 Put `target/release/mdrun` in a directory on your PATH, and run `mdrun --help` to explore the CLI. The executable starts without Rust, Go, Java, Node, Python or an external Showboat installation. Commands you execute still need their own interpreters and application runtimes.
 
-Release automation targets macOS Apple Silicon and Linux x86_64/arm64, with archives, static Linux executables, `.deb`/`.rpm` packages and Homebrew through `mbackschat/tap`. Published installation commands will be added after qualification; see [distribution](docs/distribution.md).
+Document editing, replay, discovery, cooperative managed execution, native packages and SDK assets have passed macOS/Linux qualification at identified candidate revisions. The public session and SDK version-1 contract is frozen for 0.1.0; the [implementation plan](docs/PLAN.md) records exact-revision evidence and outstanding release gates. Application adapters still need their own parity and resource qualification.
 
-For a cooperative Python application, the release assets also include a standard Python 3.12+ SDK wheel. Install it with `uv pip install` into the application's virtual environment using an exact release URL and SHA-256 requirement; the same pinned file works locally and in CI. The [Python SDK installation guide](docs/sdk-distribution.md#install-the-python-sdk-with-uv) covers release URLs and local wheels. This library is separate from the standalone host, and PyPI publication remains deferred. The commands become usable when the selected release assets are published.
+For a cooperative Python application, choose the standard Python 3.12+ SDK wheel from the same release. Install it with `uv pip install` into the application's virtual environment using an exact release URL and SHA-256 requirement; the same pinned file works locally and in CI. The [Python SDK installation guide](docs/sdk-distribution.md#install-the-python-sdk-with-uv) covers release URLs and local wheels. This library is separate from the standalone host, and PyPI publication remains deferred.
 
 | Need | Command |
 | --- | --- |

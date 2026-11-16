@@ -2,7 +2,7 @@
 
 mdrun turns Markdown examples into repeatable checks and lets cooperative applications reuse startup across calls. This document defines the behavior users and integrations can rely on. For a working first example, use the [README](../README.md); for component design, use the [architecture guide](architecture.md).
 
-The 0.1.0 candidate's document CLI, discovery, managed execution, native packages and SDK artifacts have macOS/Linux pre-release qualification. The public version-1 session and SDK contract is frozen; publication remains held. The [implementation plan](PLAN.md) owns exact-revision evidence and remaining publication gates. Qualification of mdrun does not establish safe reuse or cold/warm parity for an arbitrary application.
+The 0.1.0 candidate's document CLI, discovery, managed execution, native packages and SDK artifacts have macOS/Linux pre-release qualification. The public version-1 session and SDK contract is frozen; publication was authorized on 2026-11-16. The [implementation plan](PLAN.md) owns exact-revision evidence and remaining publication gates. Qualification of mdrun does not establish safe reuse or cold/warm parity for an arbitrary application.
 
 ## Implemented behavior
 

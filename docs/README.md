@@ -40,7 +40,7 @@ An ordinary CLI invocation starts a new process every time. A managed session ca
 
 ## Follow project status and evidence
 
-mdrun is a pre-release candidate; publication is held. Document commands, discovery, cooperative execution, native packages and SDK assets have macOS/Linux pre-release qualification. The public session and SDK version-1 contract is frozen; the plan identifies the qualified revisions and remaining publication gates.
+Publication of the 0.1.0 candidate was authorized on 2026-11-16. Document commands, discovery, cooperative execution, native packages and SDK assets have macOS/Linux pre-release qualification. The public session and SDK version-1 contract is frozen; the plan identifies the qualified revisions and remaining publication gates.
 
 | Question | Read |
 | --- | --- |
