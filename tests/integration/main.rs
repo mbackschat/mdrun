@@ -6,4 +6,5 @@ mod native_client;
 mod remote;
 mod session;
 mod session_owner_loss;
+mod session_startup;
 mod warm_owner_loss;
