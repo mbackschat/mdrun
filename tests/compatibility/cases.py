@@ -8,8 +8,17 @@ MATCH = LEGACY + b"\n```sh\nprintf 'hello\\n'\n```\n\n```output\nhello\n```\n"
 DRIFT = MATCH.replace(b"\nhello\n", b"\nstale\n")
 IMAGE_BYTES = b"\x89PNG\r\n\x1a\n\x00binary\xfffixture"
 
+PARSER_POLICY_CASES = frozenset({
+    "init-extra", "note-extras", "exec-extra", "note-literal-option", "note-global-in-text",
+    "workdir-repeated", "verify-repeated-output", "verify-output-missing-value",
+    "verify-output-before-file", "verify-unknown-extra", "extract-missing-value", "extract-repeated",
+})
+SOURCE_PRESERVATION_CASES = frozenset({"text-crlf", "text-extra-blanks"})
 
-def cases():
+
+def cases(suite="behavior"):
+    if suite not in ("behavior", "upstream"):
+        raise ValueError(f"unknown compatibility suite: {suite}")
     result = []
 
     def add(name, argv, *, files=None, stdin=b"", **kwargs):
@@ -146,4 +155,7 @@ def cases():
         files={"doc.md": MATCH + b"\nA quote: ' and $literal\nshowboat is literal prose here\n\n```bash {image}\n![caption](source.png)\n```\n\n![caption](recorded.png)\n",
                "source.png": IMAGE_BYTES, "recorded.png": IMAGE_BYTES},
         reconstruct_document="rebuilt.md", reconstruct_files={"source.png": IMAGE_BYTES})
-    return result
+    if suite == "upstream":
+        return result
+    return [case for case in result if not case.name.startswith("cli-")
+            and case.name not in PARSER_POLICY_CASES | SOURCE_PRESERVATION_CASES]

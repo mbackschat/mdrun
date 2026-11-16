@@ -16,6 +16,66 @@ class OracleTests(unittest.TestCase):
     def fixture(self, source):
         return Case("probe", {"driver.py": source.encode()}, [Step(["driver.py"])])
 
+    def observation(self, stdout=b"", stderr=b""):
+        return [{"status": 0, "stdout": stdout, "stderr": stderr, "requests": [],
+                 "files": {}, "directories": []}]
+
+    def test_behavior_suite_separates_parser_policy_and_source_preservation(self):
+        from cases import cases
+        upstream = {case.name for case in cases("upstream")}
+        behavior = {case.name for case in cases("behavior")}
+        self.assertEqual(len(upstream), 118)
+        self.assertEqual(len(behavior), 75)
+        self.assertEqual(upstream - behavior, {name for name in upstream if name.startswith("cli-")} | {
+            "init-extra", "note-extras", "exec-extra", "note-literal-option", "note-global-in-text",
+            "workdir-repeated", "verify-repeated-output", "verify-output-missing-value",
+            "verify-output-before-file", "verify-unknown-extra", "extract-missing-value",
+            "extract-repeated", "text-crlf", "text-extra-blanks",
+        })
+        self.assertTrue({"exec-binary", "exec-nonzero", "verify-copy", "workdir-middle",
+                         "remote-workflow-503", "extract-reconstruction"} <= behavior)
+
+    def test_extract_projection_preserves_quoted_program_names_and_rejects_invalid_quoting(self):
+        case = Case("extract-projection", {}, [Step(["extract", "doc.md"])])
+        left = self.observation(b"showboat init doc.md Example\nshowboat note doc.md 'literal showboat\nshowboat remains quoted'\n")
+        right = self.observation(b"mdrun init doc.md Example\nmdrun note doc.md 'literal showboat\nshowboat remains quoted'\n")
+        self.assertEqual(compare(case, left, right), [])
+        self.assertTrue(compare(case, left, right, suite="upstream"))
+        separated = self.observation(b"mdrun init -- doc.md Example\nmdrun note -- doc.md 'literal showboat\nshowboat remains quoted'\n")
+        self.assertEqual(compare(case, left, separated), [])
+        literal = self.observation(b"showboat note doc.md --\n")
+        self.assertEqual(compare(case, literal, self.observation(b"mdrun note -- doc.md --\n")), [])
+        self.assertTrue(compare(case, literal, self.observation(b"mdrun note -- doc.md different\n")))
+        with self.assertRaises(ValueError):
+            compare(case, literal, self.observation(b"showboat note -- doc.md --\n"))
+        changed = copy.deepcopy(right)
+        changed[0]["stdout"] = changed[0]["stdout"].replace(b"literal showboat", b"literal mdrun")
+        self.assertTrue(compare(case, left, changed))
+        changed[0]["stdout"] = b"mdrun note doc.md 'unclosed\n"
+        with self.assertRaises(ValueError):
+            compare(case, left, changed)
+        changed[0]["stdout"] = b"mdrun pop doc.md\n"
+        with self.assertRaises(ValueError):
+            compare(case, left, changed)
+        changed[0]["stdout"] = b"printf '%s\\n' '[\"aW5pdA==\",\"ZG9jLm1k\",\"RXhhbXBsZQ==\"]'\n"
+        with self.assertRaises(ValueError):
+            compare(case, left, changed)
+        case.steps = [Step(["exec", "doc.md", "sh", ":"])]
+        self.assertTrue(compare(case, left, right))
+
+    def test_remote_warning_projection_requires_the_declared_status_and_exact_warning(self):
+        case = Case("remote-projection", {}, [Step(["note", "doc.md", "text"])], remote_status=503)
+        left = self.observation(stderr=b"showboat: remote POST warning: server returned 503\n")
+        right = self.observation(stderr=b"mdrun: remote POST warning: server returned 503\n")
+        self.assertEqual(compare(case, left, right), [])
+        self.assertTrue(compare(case, left, right, suite="upstream"))
+        for warning in [b"mdrun: remote POST warning: server returned 504\n",
+                        b"mdrun: remote POST warning: connection refused\n",
+                        b"mdrun: remote POST warning: server returned 503\nextra\n"]:
+            self.assertTrue(compare(case, left, self.observation(stderr=warning)))
+        case.remote_status = None
+        self.assertTrue(compare(case, left, right))
+
     def test_runs_in_independent_fixtures_and_compares_all_observables(self):
         case = self.fixture(
             "from pathlib import Path\nimport sys\n"

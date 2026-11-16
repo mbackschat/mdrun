@@ -14,8 +14,10 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 from urllib.parse import unquote_to_bytes
@@ -154,14 +156,58 @@ HEADER = re.compile(rb"\A(# [^\n]*\n\n)\*([^\n]+) by (Showboat 0\.6\.1|mdrun [^\
 IMAGE = re.compile(r"[0-9a-f]{8}-(\d{4}-\d{2}-\d{2})\.(png|jpg|jpeg|gif|svg)\Z")
 
 
-def canonical(case, observations):
+def extract_commands(script):
+    with tempfile.TemporaryDirectory(prefix="mdrun-oracle-extract-") as directory:
+        arguments = Path(directory) / "arguments.jsonl"
+        source = (
+            "import base64, json, os, sys\n"
+            "args = [os.path.basename(sys.argv[1]), *sys.argv[2:]]\n"
+            "line = json.dumps([base64.b64encode(os.fsencode(arg)).decode('ascii') for arg in args])\n"
+            f"with open({str(arguments)!r}, 'ab') as capture:\n"
+            "    capture.write((line + '\\n').encode('ascii'))\n"
+        )
+        shim = Path(directory) / "capture"
+        shim.write_text(f"#!/bin/sh\nexec {shlex.quote(sys.executable)} -c {shlex.quote(source)} \"$0\" \"$@\"\n")
+        shim.chmod(0o700)
+        capture = observe(["/bin/sh", "-e"], Case("extract-projection", {}, [Step([], script)]),
+                          bindings={"showboat": shim, "mdrun": shim})[0]
+        recorded = arguments.read_bytes() if arguments.exists() else b""
+    if (capture["status"] or capture["stdout"] or capture["stderr"]
+            or capture["files"] or capture["directories"]):
+        raise ValueError("extract script must contain only valid emitted CLI commands")
+    commands = []
+    try:
+        arities = {b"init": 3, b"note": 3, b"exec": 4, b"image": 3}
+        for line in recorded.splitlines():
+            program, *args = [base64.b64decode(arg, validate=True) for arg in json.loads(line)]
+            if program not in (b"showboat", b"mdrun") or not args or args[0] not in arities:
+                raise ValueError("unsupported emitted command form")
+            if program == b"mdrun" and args[1:2] == [b"--"]:
+                del args[1]
+            if len(args) != arities[args[0]]:
+                raise ValueError("unsupported emitted command form")
+            commands.append(args)
+    except (ValueError, TypeError) as error:
+        raise ValueError("extract script must contain only valid emitted CLI commands") from error
+    return commands
+
+
+def canonical(case, observations, suite="behavior"):
     result = copy.deepcopy(observations)
     identities, images = {}, {}
-    for snapshot in result:
+    for index, snapshot in enumerate(result):
+        if suite == "behavior":
+            if (index < len(case.steps) and case.steps[index].args[:1] == ["extract"]
+                    and snapshot["status"] == 0):
+                snapshot["stdout"] = extract_commands(snapshot["stdout"])
+            if case.remote_status and case.remote_status >= 400:
+                warning = f": remote POST warning: server returned {case.remote_status}\n".encode()
+                if snapshot["stderr"] in (b"showboat" + warning, b"mdrun" + warning):
+                    snapshot["stderr"] = b"<program>" + warning
         if "reconstruction" in snapshot:
             replay = Case(case.name + "-reconstruction", case.reconstruct_files, [],
                           generated_documents=[case.reconstruct_document], generated_images=True)
-            snapshot["reconstruction"] = canonical(replay, snapshot["reconstruction"])
+            snapshot["reconstruction"] = canonical(replay, snapshot["reconstruction"], suite)
         for name in case.generated_documents:
             if name not in snapshot["files"]:
                 continue
@@ -217,8 +263,8 @@ def canonical(case, observations):
     return result
 
 
-def compare(case, left, right):
-    expected, actual = canonical(case, left), canonical(case, right)
+def compare(case, left, right, suite="behavior"):
+    expected, actual = canonical(case, left, suite), canonical(case, right, suite)
     if len(expected) != len(actual):
         return ["step count"]
     return [f"step {index + 1}: {key}" for index, (a, b) in enumerate(zip(expected, actual))
@@ -243,24 +289,29 @@ def main():
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--results", type=Path, required=True)
     parser.add_argument("--case", help="case-name substring filter")
+    parser.add_argument("--suite", choices=["behavior", "upstream"], default="behavior",
+                        help="behavioral contract (default) or complete upstream-quirk selfcheck")
     args = parser.parse_args()
     commands = {key: [str(value.resolve())] for key, value in
                 [("oracle", args.oracle), ("candidate", args.candidate)]}
     identity = verify_identity(Path(commands["oracle"][0]))
-    selected = [case for case in cases() if not args.case or args.case in case.name]
+    selected = [case for case in cases(args.suite) if not args.case or args.case in case.name]
     if not selected:
         parser.error("case filter matched nothing")
     args.results.mkdir(parents=True, exist_ok=False)
     failures = []
     for case in selected:
         observations = {key: observe(command, case) for key, command in commands.items()}
-        differences = compare(case, observations["oracle"], observations["candidate"])
+        try:
+            differences = compare(case, observations["oracle"], observations["candidate"], args.suite)
+        except ValueError as error:
+            differences = [f"invalid observation: {error}"]
         if differences:
             failures.append({"case": case.name, "differences": differences})
         record = {"case": case.name, "steps": [step.args for step in case.steps],
                   "differences": differences, **observations}
         (args.results / f"{case.name}.json").write_text(json.dumps(json_value(record), indent=2) + "\n")
-    summary = {"cases": len(selected), "failures": failures, "oracle_identity": identity,
+    summary = {"suite": args.suite, "cases": len(selected), "failures": failures, "oracle_identity": identity,
                "binaries": {key: {"path": command[0], "sha256": hashlib.sha256(Path(command[0]).read_bytes()).hexdigest()}
                             for key, command in commands.items()}}
     (args.results / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")

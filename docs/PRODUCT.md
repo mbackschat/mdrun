@@ -2,15 +2,17 @@
 
 **mdrun — Create, run, and verify executable Markdown documents.**
 
-Status: bootstrap, 2026-11-16. The current executable contract is limited to the next section. Remaining sections are accepted requirements for implementation, not claims of supported behavior. The useful source conclusions are recorded in [research provenance](research/README.md) and the [execution plan](plans/execution.md).
+Status: document CLI implementation, 2026-11-16; qualification in progress. The current executable contract is described in the next section. Remaining sections are accepted requirements for implementation, not claims of supported behavior. The useful source conclusions are recorded in [research provenance](research/README.md) and the [execution plan](plans/execution.md).
 
 ## Implemented behavior
 
-The standalone Rust executable prints its identity/version for `--version`, and bootstrap help for no arguments, `--help`, `-h` or `help`. Unsupported arguments, including document commands, return status 2 with a diagnostic on stderr. Successful informational commands return status 0. There are no document mutations, workers, runtime dependencies or third-party crates in this bootstrap. This temporary surface is not a claim of Showboat CLI parity.
+The Rust executable implements `init`, `note`, `exec`, `image`, `pop`, `verify` and `extract` with ordinary cold process execution. It supports stdin text/code/image inputs, merged stdout/stderr recording and command exit status, working-directory selection, copied images, replay/diffs and updated output, extraction and remote form/multipart delivery. New documents use mdrun provenance; untouched legacy source and metadata are retained. Explicitly choosing the input as `verify --output` updates that file; ordinary verification is read-only.
+
+Clap owns all parsing, help and version output. Normal informational requests exit 0; invalid or missing arguments exit 2; document/verification failures exit 1. `exec` returns the child status (255 for signal termination on qualified Unix behavior). No worker/session/discovery feature is implemented yet. Compiled Rust libraries do not require an installed language runtime or Showboat for host operation; invoked programs still need their own interpreters.
 
 ## Required document behavior
 
-Implement full command-line and feature compatibility against a pinned Showboat release, with deliberate, documented identity differences. The [compatibility plan](plans/compatibility.md) owns the inventory and baseline qualification. Preserve unmanaged Markdown and legacy provenance; newly authored documents identify mdrun truthfully. Do not rewrite a corpus merely to change branding.
+Retain Showboat’s seven document commands, familiar options, document format and execution behavior against a pinned release. On 2026-11-16 the owner explicitly replaced exact CLI mimicry with normal library-based parsing: use clap for argument handling, help, version and diagnostics; do not reproduce incidental parser quirks or write a custom option parser. The [compatibility plan](plans/compatibility.md) owns the inventory and baseline qualification. Preserve unmanaged Markdown and legacy provenance; newly authored documents identify mdrun truthfully. Do not rewrite a corpus merely to change branding.
 
 Required commands are `init`, `note`, `exec`, `image`, `pop`, `verify` and `extract`. Required behavior includes stdin inputs, command failures, interpreter selection, working directories, captured output, image copying/alt text, exact replay and diffs, updated-copy output, extraction/quoting, timestamps/IDs, help/version/options and remote streaming. Recording and verification must operate without an installed Showboat executable; upstream is a test oracle only.
 

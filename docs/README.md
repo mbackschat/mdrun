@@ -1,6 +1,6 @@
 # Documentation
 
-Current status: repository bootstrap, 2026-11-16. Production document execution and warm runtime sessions are not implemented. Current documents below govern work; the research index maps the extracted conclusions to their maintained owners.
+Current status: document CLI implementation, 2026-11-16; qualification in progress. Warm runtime sessions and discovery remain planned. Current documents below govern work; the research index maps the extracted conclusions to their maintained owners.
 
 | Document | Owns |
 | --- | --- |
@@ -9,6 +9,7 @@ Current status: repository bootstrap, 2026-11-16. Production document execution 
 | [Active plans](plans/README.md) | Detailed compatibility and consumer qualification |
 | [Deferred work](DEFERRED.md) | Unscheduled scope and reopening conditions |
 | [Distribution](distribution.md) | Release targets, artifacts, Homebrew and Linux package qualification |
+| [Dependency choices](dependencies.md) | Reasons for compiled libraries and qualification policy |
 | [Security](security.md) | Dependency quarantine, security-fix exceptions and GitHub scanning |
 | [Research](research/README.md) | Extracted conclusions and source provenance |
 

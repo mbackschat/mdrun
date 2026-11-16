@@ -1,6 +1,6 @@
 # Showboat compatibility qualification
 
-Status: M1 harness established locally on 2026-11-16; M2 product compatibility remains open. [PRODUCT](../PRODUCT.md) owns the accepted requirement; [research provenance](../research/README.md) records its origin.
+Status: M1 harness passed local and hosted macOS/Linux qualification on 2026-11-16; M2 product compatibility remains open. The owner accepted normal clap parsing/help/errors instead of exact CLI mimicry on the same date. [PRODUCT](../PRODUCT.md) owns the accepted requirement; [research provenance](../research/README.md) records its origin.
 
 ## Baseline
 
@@ -30,7 +30,7 @@ Each row must become executable cases against the pinned upstream binary and mdr
 
 | Surface | Required cases and oracle |
 | --- | --- |
-| CLI grammar | Every command, aliases/help, global/command option positions, repeated/missing/unknown options, arity errors, paths with spaces, `--` handling and exact status/stream behavior |
+| CLI grammar | Independent clap contract tests: seven commands, normal help/version, familiar options, accepted positions, arity/unknown/extra argument errors, native paths and `--`. Historical Showboat quirks stay in the upstream inventory but are not product parity gates. |
 | `init` | Title, existing/missing file paths, timestamp and UUID invariants, metadata structure, workdir effects |
 | `note` | Argument and stdin input, empty input, multiline Markdown, Unicode and preserved surrounding bytes |
 | `exec` | Argument/stdin code, interpreter lookup, cwd, stdout/stderr capture semantics, nonzero/signal outcomes, recorded failures, quoting and invalid text representation |
@@ -44,16 +44,18 @@ Each row must become executable cases against the pinned upstream binary and mdr
 
 ## Intentional differences
 
-New mdrun documents and version output identify mdrun. Legacy bylines and `showboat-id` metadata survive reads and updated-copy replay unchanged. Timestamp/UUID comparisons establish format, identity association and round-trip behavior rather than requiring random/time values to match. Help may identify mdrun and document its additional execution features; required upstream syntax and errors must still be inventoried and tested.
+New mdrun documents and version output identify mdrun. Legacy bylines and `showboat-id` metadata survive reads and updated-copy replay unchanged. Timestamp/UUID comparisons establish format, identity association and round-trip behavior rather than requiring random/time values to match. Help identifies mdrun and follows clap. The familiar commands/options remain; parser diagnostics, no-argument behavior, error status 2, rejected extra arguments and normal `--` handling deliberately follow clap rather than Showboat’s ad hoc grammar.
 
-Normalize only explicitly listed nondeterministic or branding fields, separately from the raw observations. Do not normalize output whitespace, ordering, exit codes, warnings, file bytes or failed-command behavior without a documented product decision. Additional fast/cold/session syntax must not change the meaning of legacy commands. The harness currently retains version/help/extract branding differences visibly until M2 implements their exact approved representations; no global product-name replacement is allowed.
+Normalize only explicitly listed nondeterministic or branding fields, separately from the raw observations. Do not normalize output whitespace, ordering, exit codes, warnings, file bytes or failed-command behavior without a documented product decision. Additional fast/cold/session syntax must not change the meaning of legacy commands. Parser-only upstream cases are explicitly separated from behavioral parity. Help/version have independent product assertions; extraction and remote-warning identity projection must be narrowly scoped, with no global product-name replacement.
 
 ## Dependency decision
 
-Use a small explicit parser over native arguments for the legacy surface. The upstream scan/arity/ignored-argument rules are simple but differ from conventional parser defaults; wrapping `clap` to undo those defaults would add work and dependencies without simplifying this contract. New subcommands may use separately specified strict parsing. Source-preserving document edits, HTTP/TLS, timestamps/UUIDs and process support are assessed independently when implemented; no dependency list is inherited from LOCmetry.
+Use clap for all CLI parsing. The owner explicitly relaxed incidental parser compatibility and prohibited custom option parsing; the ordinary consumer forms remain supported. Adopt stable clap 4.6.7 (published 2026-09-14), age-qualified with its complete resolved graph. Source-preserving document edits, HTTP/TLS, timestamps/UUIDs and process support are assessed independently when implemented; no dependency list is inherited from LOCmetry.
 
 ## Completion
 
 M1 completes with the pin, source/executable identities, finite expanded matrix, narrow normalization rules and an oracle harness that detects deliberately divergent results. M2 completes when the production commands pass every required case on the qualified platforms, with original-file preservation and standalone operation independently checked. Preserve failures and resolutions as evidence, and replace planned status only after those checks run.
 
-Local M1 evidence on 2026-11-16: eight harness guards pass, including invalid UTF-8 HTTP bytes and a disabled-cleanup negative control; 117 cases agree across independent upstream runs, with the added extraction-reconstruction case passing separately. The bootstrap negative control produces differences in status, both output streams and document effects. Two clean builds have identical hashes. A fresh MEDIUM review found the form-decoding and child-cleanup defects, both fixed with guards, and prompted fixed-legacy-ID and extraction-reconstruction cases. macOS/Linux CI is configured for oracle self-comparison; it is distinct from M2 product qualification.
+Local M1 evidence on 2026-11-16: eight harness guards pass, including invalid UTF-8 HTTP bytes and a disabled-cleanup negative control; 117 cases agree across independent upstream runs, with the added extraction-reconstruction case passing separately. The bootstrap negative control produces differences in status, both output streams and document effects. Two clean builds have identical hashes. A fresh MEDIUM review found the form-decoding and child-cleanup defects, both fixed with guards, and prompted fixed-legacy-ID and extraction-reconstruction cases. Hosted macOS/Linux oracle self-comparison passed at `607cadc`; it is distinct from M2 product qualification.
+
+Local M2 evidence on 2026-11-16: all 75 required behavioral cases agree against the identified oracle; all 118 historical upstream cases pass self-comparison, and 11 harness guards pass. The [harness contract](../../tests/compatibility/README.md) explicitly lists the parser-policy and source-preservation exclusions. The qualified macOS arm64 candidate has SHA-256 `7263e207c21851fa08b38e456d41c1fe219cec4bc060e9762391ec18d4810ef9`. All 20 unit and 14 integration tests pass, including ordinary clap syntax, native argument bytes, source preservation, shell reconstruction, refused HTTP connections and an unanswered request reaching the actual ten-second timeout without losing local recording or command status. Formatting, Clippy and release build pass. A HIGH review found missing positional terminators and unquoted interpreter paths in extraction; both are fixed with failing-then-passing reconstruction guards. The binary starts with an empty environment and links only macOS system libraries; hosted product qualification remains pending.

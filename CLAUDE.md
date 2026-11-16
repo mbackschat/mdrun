@@ -9,7 +9,7 @@ mdrun is a Rust CLI for executable Markdown with cooperative warm execution. Edi
 - [Documentation index](docs/README.md) owns navigation. [Research provenance](docs/research/README.md) identifies the extracted feasibility conclusions and their limitations.
 - [Distribution](docs/distribution.md) owns release targets, packaging and Homebrew publication; the MIT license and retained `mdrun` name are owner decisions.
 
-The extracted requirements guide product direction; historical prototype guarantees are not current implementation claims. Do not reopen the accepted name, Rust choice, full compatibility goal or runtime order without a concrete blocker.
+The extracted requirements guide product direction; historical prototype guarantees are not current implementation claims. Do not reopen the accepted name, Rust choice, document-behavior compatibility goal or runtime order without a concrete blocker.
 
 ## Structure and boundaries
 
@@ -36,7 +36,7 @@ Use red/green TDD for features and fixes: define the observable invariant and or
 
 Run Cargo commands sharing a target directory sequentially. Save long-running output once and inspect its failures, counts and timings; repeat only after relevant changes or unresolved failures. Dependency or cross-cutting changes require the full suite, formatting and Clippy. Documentation-only changes need relevant link/consistency checks and `git diff --check`, not unrelated builds. Before handback inspect `git status --short` and `git diff --check`; distinguish configured checks, actual local passes and hosted qualification.
 
-Use rustfmt, four-space indentation, `snake_case` functions/modules and `PascalCase` types. Prefer finite enums and explicit state transitions over speculative frameworks. Add dependencies only for demonstrated product needs; assess CLI libraries against the pinned argument/exit/help contract rather than adopting their defaults as the contract. Retain [Cargo.lock](Cargo.lock). The host must start without Java, Node, Python or an external Showboat installation.
+Use rustfmt, four-space indentation, `snake_case` functions/modules and `PascalCase` types. Prefer finite enums and explicit state transitions over speculative frameworks. Add dependencies only for demonstrated product needs. Use clap for all CLI parsing; the owner explicitly accepts its normal help, diagnostics, terminator and validation behavior instead of exact Showboat parser quirks. Preserve the seven command names/options and document/execution behavior; test the CLI contract independently. Retain [Cargo.lock](Cargo.lock). The host must start without Java, Node, Python or an external Showboat installation.
 
 Never retry an accepted invocation. Keep command failure separate from infrastructure or cleanup failure; shell masking must not make a poisoned session successful. Preserve byte fidelity in transport separately from Markdown representation. Do not promote `spike/1` to the production protocol without the stream, context and ownership qualification in the plans.
 
