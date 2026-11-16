@@ -25,7 +25,7 @@ def archive(root, version, target, output):
         raise ValueError(f"unsupported release target: {target}")
     files = {
         "mdrun": root / "target" / target / "release" / "mdrun",
-        **{name: root / name for name in ("README.md", "CHANGELOG.md", "LICENSE")},
+        **{name: root / name for name in ("README.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTICES.txt")},
     }
     for source in files.values():
         if not source.is_file():

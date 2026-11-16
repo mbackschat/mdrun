@@ -32,6 +32,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+      - name: Check locked crate notices
+        run: python3 packaging/notices.py check
       - name: Check dependency quarantine before compilation
         run: python3 scripts/dependency_policy.py
       - name: Require the release tag to match the crate
@@ -52,6 +54,7 @@ jobs:
           binary="$PWD/target/package-smoke/mdrun-v$(python3 packaging/distribution.py version)-${{ matrix.target }}/mdrun"
           test "$(env -i "$binary" --version)" = "mdrun $(python3 packaging/distribution.py version)"
           env -i "$binary" --help
+          sh packaging/smoke.sh "$binary"
           echo "BINARY=$binary" >> "$GITHUB_ENV"
       - name: Require static Linux linkage
         if: runner.os == 'Linux'

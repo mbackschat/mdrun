@@ -2,6 +2,7 @@
 set -eu
 directory=${1:?usage: verify-packages.sh ABSOLUTE_DIRECTORY}
 case "$directory" in /*) ;; *) echo "use an absolute package directory" >&2; exit 1 ;; esac
+script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 found_deb=0
 found_rpm=0
@@ -16,13 +17,13 @@ for package in "$directory"/*.deb "$directory"/*.rpm; do
     case "$name" in
         *.deb)
             found_deb=1
-            docker run --rm --platform "$platform" -v "$directory:/packages:ro" debian:13-slim \
-                sh -euc 'dpkg -i "/packages/$1"; env -i /usr/bin/mdrun --version; env -i /usr/bin/mdrun --help; dpkg-query -L mdrun | grep /usr/share/doc/mdrun/LICENSE; dpkg -r mdrun; test ! -e /usr/bin/mdrun' sh "$name"
+            docker run --rm --platform "$platform" -v "$directory:/packages:ro" -v "$script_directory/../smoke.sh:/package-smoke.sh:ro" debian:13-slim \
+                sh -euc 'dpkg -i "/packages/$1"; env -i /usr/bin/mdrun --version; sh /package-smoke.sh /usr/bin/mdrun; test -s /usr/share/doc/mdrun/THIRD_PARTY_NOTICES.txt; dpkg-query -L mdrun | grep /usr/share/doc/mdrun/LICENSE; dpkg -r mdrun; test ! -e /usr/bin/mdrun' sh "$name"
             ;;
         *.rpm)
             found_rpm=1
-            docker run --rm --platform "$platform" -v "$directory:/packages:ro" fedora:43 \
-                sh -euc 'rpm -i "/packages/$1"; env -i /usr/bin/mdrun --version; env -i /usr/bin/mdrun --help; test -s /usr/share/licenses/mdrun/LICENSE; rpm -e mdrun; test ! -e /usr/bin/mdrun' sh "$name"
+            docker run --rm --platform "$platform" -v "$directory:/packages:ro" -v "$script_directory/../smoke.sh:/package-smoke.sh:ro" fedora:43 \
+                sh -euc 'rpm -i "/packages/$1"; env -i /usr/bin/mdrun --version; sh /package-smoke.sh /usr/bin/mdrun; test -s /usr/share/licenses/mdrun/THIRD_PARTY_NOTICES.txt; test -s /usr/share/licenses/mdrun/LICENSE; rpm -e mdrun; test ! -e /usr/bin/mdrun' sh "$name"
             ;;
     esac
 done

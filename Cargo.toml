@@ -17,6 +17,7 @@ assets = [
     ["README.md", "usr/share/doc/mdrun/", "644"],
     ["CHANGELOG.md", "usr/share/doc/mdrun/", "644"],
     ["LICENSE", "usr/share/doc/mdrun/", "644"],
+    ["THIRD_PARTY_NOTICES.txt", "usr/share/doc/mdrun/", "644"],
 ]
 
 [package.metadata.generate-rpm]
@@ -26,6 +27,7 @@ assets = [
     { source = "README.md", dest = "/usr/share/doc/mdrun/README.md", mode = "644", doc = true },
     { source = "CHANGELOG.md", dest = "/usr/share/doc/mdrun/CHANGELOG.md", mode = "644", doc = true },
     { source = "LICENSE", dest = "/usr/share/licenses/mdrun/LICENSE", mode = "644" },
+    { source = "THIRD_PARTY_NOTICES.txt", dest = "/usr/share/licenses/mdrun/THIRD_PARTY_NOTICES.txt", mode = "644" },
 ]
 
 [profile.dev]

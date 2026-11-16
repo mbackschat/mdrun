@@ -17,6 +17,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+      - name: Check locked crate notices
+        run: python3 packaging/notices.py check
       - name: Check dependency quarantine before compilation
         run: python3 scripts/dependency_policy.py
       - name: Install Rust checks

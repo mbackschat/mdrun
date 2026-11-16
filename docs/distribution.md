@@ -1,6 +1,6 @@
 # Distribution and releases
 
-Status: release infrastructure, 2026-11-16. The owner selected public GitHub hosting, MIT licensing, Homebrew and Linux packages. No product version has been released. The executable remains a bootstrap; a successful packaging dry run does not establish document compatibility or production runtime guarantees.
+Status: release qualification in progress, 2026-11-16. The owner selected public GitHub hosting, MIT licensing, Homebrew and Linux packages. No product version has been released. The document CLI and discovery have macOS/Linux qualification; sessions and runtime SDKs remain experimental. A successful packaging run does not close their outstanding ownership and consumer gates.
 
 ## Targets and artifacts
 
@@ -16,9 +16,9 @@ These are initial build targets, following the macOS/Linux portion of LOCmetry's
 
 ## Before the first release
 
-- Complete the applicable [product qualification](PLAN.md) and retain passing compatibility/runtime/platform evidence. Do not label this bootstrap as a working Showboat replacement.
-- Replace bootstrap-only package smoke checks with a small real document author/verify scenario when M2 implements it.
-- Audit newly added compiled dependencies and include any required third-party notices in archives, Linux packages and Homebrew. The bootstrap has no third-party crates; credit for Showboat's idea is already in the README.
+- Complete the applicable [product qualification](PLAN.md) and retain passing compatibility/runtime/platform evidence before claiming supported warm execution or migration readiness.
+- Pass the document smoke scenario against extracted archives, installed Linux packages and Homebrew on supported targets. Local helper success and configured CI are not installation evidence.
+- Audit compiled dependency notices and exact release-toolchain attribution, including Rust's runtime/standard library and statically linked musl on Linux. A crate-notice bundle alone does not establish the final binary's complete attribution. Credit for Showboat's idea remains in the README.
 - Confirm the release tag matches `Cargo.toml` and `Cargo.lock`, record the version's changes in the changelog, and verify the current commit's CI and packaging dry run.
 - Check GitHub author email is `mbackschat@mail.de` before pushing. A version tag is the explicit publication trigger; manual dispatch never publishes.
 
@@ -32,7 +32,11 @@ python3 packaging/distribution.py archive aarch64-apple-darwin dist
 python3 -m unittest discover -s packaging -p 'test_*.py'
 ```
 
-Archives include the binary, README, changelog and MIT license. The archive helper refuses missing inputs, unsupported targets, invalid versions and an existing destination. Cargo's Linux package metadata lives in [Cargo.toml](../Cargo.toml); the release workflow pins the package-building tools and checks actual installation. Rust is a build dependency; Python, Docker and packaging tools are development/CI dependencies, not dependencies of the installed host.
+Archives include the binary, README, changelog, MIT license and [third-party crate notices](../THIRD_PARTY_NOTICES.txt). The archive helper refuses missing inputs, unsupported targets, invalid versions and an existing destination. Cargo's Linux package metadata lives in [Cargo.toml](../Cargo.toml); the release workflow pins the package-building tools and checks actual installation. Rust is a build dependency; Python, Docker and packaging tools are development/CI dependencies, not dependencies of the installed host.
+
+The [notice helper](../packaging/notices.py) preserves upstream license/notice texts from checksum-verified crate archives, including nested component notices. Its checked bundle conservatively covers the complete lockfile, including build-only and other-target dependencies; it does not claim every listed crate is linked. CI checks the inventory against Cargo.lock and the bundle hash. When dependencies change, generate fresh full Cargo metadata, regenerate the bundle with `python3 packaging/notices.py generate --metadata /path/to/metadata.json`, and review the selected notice files and license declarations. `check --metadata /path/to/metadata.json` additionally reproduces the bundle from the cached upstream archives. This does not replace the separate release-toolchain/musl audit.
+
+The shared [package smoke scenario](../packaging/smoke.sh) runs the installed executable with an empty environment and PATH, using explicit system interpreter/command paths for the recorded program. It creates a document, adds a note, records literal output and verifies it; changed input must then fail verification without editing the document. A version-only stub is rejected by the independent guard. The release workflow applies this scenario to each extracted archive and installed Linux package; Homebrew's test performs the same author/replay/mismatch checks. The local guard passes against a separately built host; cross-target installation of this extension remains pending.
 
 ## Publish and update Homebrew
 
@@ -40,7 +44,7 @@ Once an approved version tag is pushed, all release builds must pass before GitH
 
 The [Homebrew template](../packaging/homebrew/mdrun.rb) uses prebuilt archives for stable installs and Rust only for `--HEAD` builds. The [distribution helper](../packaging/distribution.py) requires exactly one valid digest for every native archive before rendering it. For a qualified release, copy its generated `mdrun.rb` into `Formula/mdrun.rb` in `mbackschat/homebrew-tap`, review the version/URLs/digests, and run `brew audit --strict mbackschat/tap/mdrun`, `brew install mbackschat/tap/mdrun` and `brew test mbackschat/tap/mdrun` on supported systems before publishing the tap update.
 
-After the formula is published, the intended install command is `brew install mbackschat/tap/mdrun`. Linux users may alternatively download the matching archive or install the `.deb`/`.rpm` release package. No Homebrew formula or product release has been published by the repository bootstrap itself.
+After the formula is published, the intended install command is `brew install mbackschat/tap/mdrun`. Linux users may alternatively download the matching archive or install the `.deb`/`.rpm` release package. No Homebrew formula or product release has been published yet.
 
 ## Name and registry scope
 

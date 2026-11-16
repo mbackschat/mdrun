@@ -33,12 +33,25 @@ class Mdrun < Formula
     else
       bin.install "mdrun"
     end
-    prefix.install "LICENSE"
+    prefix.install "LICENSE", "THIRD_PARTY_NOTICES.txt"
   end
 
   test do
     output = with_env(PATH: "") { shell_output("#{bin}/mdrun --version") }
     assert_match(/^mdrun \d+\.\d+\.\d+\n$/, output)
     assert_match "executable Markdown", shell_output("#{bin}/mdrun --help")
+    (testpath/"input.txt").write "package smoke\n"
+    with_env(PATH: "") do
+      system bin/"mdrun", "init", "demo.md", "Package qualification"
+      system bin/"mdrun", "note", "demo.md", "Recorded by the installed executable."
+      system bin/"mdrun", "exec", "demo.md", "/bin/sh", "/bin/cat input.txt"
+      recorded = (testpath/"demo.md").read
+      assert_match "Recorded by the installed executable.", recorded
+      assert_match "\npackage smoke\n", recorded
+      system bin/"mdrun", "verify", "demo.md"
+      (testpath/"input.txt").write "changed input\n"
+      assert_match "changed input", shell_output("#{bin}/mdrun verify demo.md", 1)
+      assert_equal recorded, (testpath/"demo.md").read
+    end
   end
 end

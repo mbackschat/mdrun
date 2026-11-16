@@ -1,1 +1,3 @@
 * text=auto eol=lf
+# Preserve exact upstream notice bytes, including subtle's BSD license spacing.
+THIRD_PARTY_NOTICES.txt -text whitespace=-blank-at-eol

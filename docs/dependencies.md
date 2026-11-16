@@ -18,7 +18,7 @@ Publication dates were checked against crates.io on 2026-11-16. The manifest pin
 
 Session work promoted already-locked `base64`, `libc` and `serde` versions to direct dependencies and enabled Serde's existing derive package. The complete graph was rechecked before compilation with zero age, prerelease or yanked-version violations; no registry package version changed in that promotion.
 
-Release qualification measures the final host footprint and audits transitive licenses. “Standalone” means no external Rust/Go/Python/Node/JVM installation is needed for the host, not that it contains no compiled libraries. Showboat is built with Go only for differential qualification; Python scripts are development/test tooling.
+The checked [crate notice bundle](../THIRD_PARTY_NOTICES.txt) preserves upstream notices for the complete locked registry graph, including nested components and packages for other targets. [Distribution](distribution.md) owns its regeneration checks and the remaining exact-toolchain/musl attribution audit. Release qualification measures the final host footprint. “Standalone” means no external Rust/Go/Python/Node/JVM installation is needed for the host, not that it contains no compiled libraries. Showboat is built with Go only for differential qualification; Python scripts are development/test tooling.
 
 ## JVM SDK development dependency
 

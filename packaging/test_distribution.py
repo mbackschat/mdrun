@@ -21,17 +21,30 @@ class DistributionTests(unittest.TestCase):
             binary.parent.mkdir(parents=True)
             binary.write_bytes(b"independent-binary-fixture\x00\xff")
             binary.chmod(0o755)
-            for name in ("README.md", "CHANGELOG.md", "LICENSE"):
+            for name in ("README.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTICES.txt"):
                 (root / name).write_text(name)
             archive = distribution.archive(root, "1.2.3", target, root / "dist")
             prefix = f"mdrun-v1.2.3-{target}"
             with tarfile.open(archive) as result:
                 self.assertEqual(
                     set(result.getnames()),
-                    {f"{prefix}/{name}" for name in ("mdrun", "README.md", "CHANGELOG.md", "LICENSE")},
+                    {f"{prefix}/{name}" for name in ("mdrun", "README.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTICES.txt")},
                 )
                 self.assertEqual(result.extractfile(f"{prefix}/mdrun").read(), binary.read_bytes())
                 self.assertEqual(result.getmember(f"{prefix}/mdrun").mode & 0o111, 0o111)
+                self.assertEqual(result.extractfile(f"{prefix}/THIRD_PARTY_NOTICES.txt").read(), b"THIRD_PARTY_NOTICES.txt")
+
+    def test_archive_refuses_missing_crate_notices(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = distribution.TARGETS[0]
+            binary = root / "target" / target / "release" / "mdrun"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"binary")
+            for name in ("README.md", "CHANGELOG.md", "LICENSE"):
+                (root / name).write_text(name)
+            with self.assertRaisesRegex(ValueError, "THIRD_PARTY_NOTICES"):
+                distribution.archive(root, "1.2.3", target, root / "dist")
 
     def test_formula_uses_each_target_checksum_and_has_no_placeholders(self):
         sums = "\n".join(
