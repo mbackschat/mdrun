@@ -1,7 +1,6 @@
 class Mdrun < Formula
   desc "Create, run, and verify executable Markdown documents"
   homepage "https://github.com/mbackschat/mdrun"
-  version "{{version}}"
   license "MIT"
 
   head do

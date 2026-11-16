@@ -100,7 +100,7 @@ class DistributionTests(unittest.TestCase):
         )
         formula = distribution.formula("1.2.3", sums)
         self.assertNotIn("{{", formula)
-        self.assertIn('version "1.2.3"', formula)
+        self.assertNotRegex(formula, r'(?m)^\s*version\s')
         for index, target in enumerate(distribution.TARGETS, 1):
             self.assertIn(f"mdrun-v1.2.3-{target}.tar.gz", formula)
             self.assertIn(f'sha256 "{str(index) * 64}"', formula)
