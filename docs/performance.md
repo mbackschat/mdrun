@@ -22,7 +22,7 @@ The [measurement harness](../tests/performance/compare.py) records raw per-sessi
 
 ## Coordinator wakeup measurements
 
-On 2026-11-16, a separate local comparison measured the host after simplification commit `087c81c` against the event-driven coordinator. Both optimized executables use Rust 1.98.1 on macOS arm64, Node 26.10.0 and the same SDK/fixture/runtime/harness bytes. No concurrent project build or qualification suite ran during either measurement. Each host ran three sessions, each with twenty tiny calls returning literal `ok`, followed by an unpaused 128 MiB stream. The [measurement harness](../tests/performance/wakeup.py) requires the fixed stream length/SHA-256, every call warm and successful, exactly one worker, clean cleanup and unchanged artifact identities before accepting timings.
+On 2026-11-16, a separate local comparison measured the host after simplification commit `087c81c` against the event-driven coordinator committed as `1cee479`. Both optimized executables use Rust 1.98.1 on macOS arm64, Node 26.10.0 and the same SDK/fixture/runtime/harness bytes. No concurrent project build or qualification suite ran during either measurement. Each host ran three sessions, each with twenty tiny calls returning literal `ok`, followed by an unpaused 128 MiB stream. The [measurement harness](../tests/performance/wakeup.py) requires the fixed stream length/SHA-256, every call warm and successful, exactly one worker, clean cleanup and unchanged artifact identities before accepting timings.
 
 | Measurement | Fixed-tick host | Event-driven host |
 | --- | ---: | ---: |
@@ -35,7 +35,7 @@ Tiny-call timing includes native client process startup and the complete forward
 | Measured artifact | SHA-256 |
 | --- | --- |
 | Before host, production source `087c81c` | `cc5fd1e1be9db85902f3c99ebc19876f4e95fc5ddda36465fd4349e395a90adf` |
-| After host, event-driven implementation | `a14253152651029e381c5170af6b4a260247478273d30caa2b436eed673a6f58` |
+| After host, production source `1cee479` | `a14253152651029e381c5170af6b4a260247478273d30caa2b436eed673a6f58` |
 | Common SDK/fixture/runtime artifact identity | `2668c340f9ec9bd3c9144bf9a820dd4921e9a758c21a12a661b947d94e60d835` |
 
 Repeat one host at a time on an otherwise idle system; save each output separately and compare only runs with identical non-host identities:

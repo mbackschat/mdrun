@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Finish batch failure reporting when publication cleanup becomes uncertain, retaining custody evidence instead of waiting indefinitely for clean publication.
 - Wake the session host on transport and custody activity, preserving bounded queues while removing fixed per-frame waits.
 - Keep batch publication files, output spools and reports readable under owner-bit-masking umasks.
 - Preserve the complete accepted cleanup-timeout range when calculating cleanup grace.

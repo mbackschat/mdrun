@@ -653,7 +653,7 @@ pub fn run(options: &Options, files: &[PathBuf], workdir: Option<&Path>) -> Resu
             }
             if active.is_empty()
                 && (failed.load(Ordering::Acquire) || next == documents.len())
-                && (publisher.active.is_none() || state.finished)
+                && (batch_error.is_some() || publisher.active.is_none() || state.finished)
                 && (published == next || batch_error.is_some())
             {
                 break;

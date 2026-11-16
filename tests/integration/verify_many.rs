@@ -13,6 +13,9 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
+#[cfg(target_os = "linux")]
+mod publication_uncertainty;
+
 struct Fixture(PathBuf, Cell<bool>);
 
 impl Fixture {
@@ -117,6 +120,14 @@ impl OwnedBatch {
     }
 
     fn finish_within(&mut self, duration: Duration) -> std::process::ExitStatus {
+        self.finish_within_diagnostics(duration, String::new)
+    }
+
+    fn finish_within_diagnostics(
+        &mut self,
+        duration: Duration,
+        diagnostics: impl Fn() -> String,
+    ) -> std::process::ExitStatus {
         let deadline = Instant::now() + duration;
         loop {
             if let Some(status) = self.0.try_wait().unwrap() {
@@ -124,7 +135,8 @@ impl OwnedBatch {
             }
             assert!(
                 Instant::now() < deadline,
-                "batch exceeded its external deadline"
+                "batch exceeded its external deadline: {}",
+                diagnostics()
             );
             std::thread::sleep(Duration::from_millis(5));
         }
@@ -461,6 +473,8 @@ fn diagnostic_publisher_expires_without_an_owner_monitor() {
 fn publication_unread_stdout_cannot_hold_batch_past_its_deadline() {
     let fixture = Fixture::new();
     short_budget(&fixture);
+    let temporary = fixture.0.join("temporary");
+    fs::create_dir(&temporary).unwrap();
     fixture.write("payload.sh", b"printf completed\n");
     fixture.document("large.md", "large", "expected");
     let (_unread, mut writer) = UnixStream::pair().unwrap();
@@ -482,13 +496,30 @@ fn publication_unread_stdout_cannot_hold_batch_past_its_deadline() {
     let mut batch = OwnedBatch(
         fixture
             .command("1", &["large.md"])
+            .env("TMPDIR", &temporary)
             .stdin(Stdio::null())
             .stdout(Stdio::from(OwnedFd::from(writer)))
             .stderr(fs::File::create(fixture.0.join("stderr")).unwrap())
             .spawn()
             .unwrap(),
     );
-    assert!(!batch.finish_within(Duration::from_secs(6)).success());
+    let status = batch.finish_within_diagnostics(Duration::from_secs(6), || {
+        fixture.1.set(true);
+        let snapshots: Vec<_> = fs::read_dir(&temporary)
+            .unwrap()
+            .filter_map(|entry| {
+                let path = entry.ok()?.path().join("custody.status.json");
+                fs::read_to_string(path).ok()
+            })
+            .collect();
+        format!(
+            "fixture {}; custody: {}; stderr: {}",
+            fixture.0.display(),
+            snapshots.join("; "),
+            String::from_utf8_lossy(&fs::read(fixture.0.join("stderr")).unwrap_or_default())
+        )
+    });
+    assert!(!status.success());
     let report = fixture.report();
     assert_eq!(report["documents"][0]["status"], 1);
     let session = &report["documents"][0]["session"];
