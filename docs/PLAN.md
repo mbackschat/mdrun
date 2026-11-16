@@ -1,6 +1,6 @@
 # Implementation plan
 
-Status: document CLI, discovery, managed sessions and all three SDKs are implemented. The simplification follow-up at `bbe19d9` passes fresh macOS/Linux source, runtime, differential, native-package and SDK artifact qualification. The public version-1 contract remains frozen for 0.1.0, and the publication hold remains in place.
+Status: document CLI, discovery, managed sessions and all three SDKs are implemented. The simplification follow-up at `bbe19d9` passes fresh macOS/Linux source, runtime, differential, native-package and SDK artifact qualification. These passes do not close the [unresolved timeout, remaining polling or structural debt](#open-simplification-findings). The public version-1 contract remains frozen for 0.1.0, and the publication hold remains in place.
 
 Publication boundary, 2026-11-16: the owner requested a stop before release. Complete implementation and non-publishing qualification, then hand back the candidate for review. Do not create a release tag, publish GitHub assets or publish a Homebrew formula until the owner resumes that work. Actual public-download and Homebrew publication checks remain explicit release gates.
 
@@ -15,6 +15,18 @@ Publication boundary, 2026-11-16: the owner requested a stop before release. Com
 The artifact run was cancelled after every build, runtime, SDK and assembly job and both Linux differentials passed; only its redundant macOS differential was still queued. The exact same revision already passed that differential in source CI. The artifact run is therefore recorded as cancelled, not wholly successful. A future release tag must pass its own complete workflow before publication.
 
 Read-only review did not establish a reachable unbounded standalone pending queue: production launches are constrained and failed launches abort. The internally generated custodian configuration is validated and written into a protected directory; extra type/size checks remain optional defensive consistency, rather than a demonstrated release blocker. Broader standalone/scoped custody unification remains outside this follow-up.
+
+## Open simplification findings
+
+The completed tasks above cover demonstrated fixes and the measured host-coordinator improvement. The following findings remain open; qualification passes are not evidence that their causes or costs have disappeared. The order below is the recommended next work, not a claim that all three are demonstrated product defects.
+
+| Priority | Open finding | Recommended next work and completion evidence |
+| --- | --- | --- |
+| 1 | Original hosted publication timeout remains unattributed | Preserve custody snapshots, batch wait state and relevant process observations before teardown on abnormal completion, and guard that evidence path with an injected failure. The current guard preserves custody snapshots and stderr on its external timeout; this does not reconstruct the missing original trace. Investigate a captured recurrence against explicit hypotheses. Close the historical attribution only with causal evidence; repeated green runs or the separate `bbe19d9` reproduction cannot prove it. |
+| 2 | Broker and custodian still poll | The [broker](../src/session/broker.rs) retains a 5 ms tick, and the [custodian](../src/session/custody.rs) waits on its owner socket for up to a nominal 10 ms before scanning anchor activity. Measure remaining handoff latency and idle wakeups before changing these waits; the interval is not a scheduler-independent latency bound. Qualify any readiness-driven replacement with before/after measurements, missed-wakeup guards, deadline priority, owner loss and retained-custody controls. Host-only measurements do not close this item. |
+| 3 | Duplicated scope transitions and large batch orchestration remain maintenance risks | Separate batch admission, publication and finalization into reviewable responsibilities under existing failure/reporting guards. Audit broker/custodian transitions against one explicit transition contract, preserving independent validation at the native authority boundary. Share only genuinely identical rules; do not equate fewer copies with safer ownership. Require behavior-preserving lifecycle/reporting tests and independent review before closing the structural work. |
+
+Publication remains held. Any later release review must explicitly account for the unresolved incident and distinguish it from performance work and maintenance debt.
 
 ## Earlier candidate evidence
 
