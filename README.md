@@ -10,7 +10,7 @@
 
 Inspired by [Showboat](https://github.com/simonw/showboat), created by Simon Willison. Showboat established the workflow this project builds on: executable Markdown combining prose, commands and captured output, with replay to verify the results. Credit for that original idea and command model belongs to Showboat and its contributors.
 
-Current status: the seven document commands and read-only command discovery pass macOS/Linux qualification with cold execution. Experimental native sessions and the cooperative Node SDK pass initial macOS/Linux controls; their API and consumer qualification remain in progress. JVM/Python SDKs and consumer migration readiness remain planned. See the [execution checklist](docs/plans/execution.md) for outstanding gates.
+Current status: the seven document commands and read-only command discovery pass macOS/Linux qualification with cold execution. Experimental native sessions and the cooperative Node SDK pass initial macOS/Linux controls. The [JVM SDK](sdk/jvm/README.md) is implemented and under qualification; APIs and consumer readiness remain in progress. Python remains planned. See the [execution checklist](docs/plans/execution.md) for outstanding gates.
 
 ## Why a new implementation?
 

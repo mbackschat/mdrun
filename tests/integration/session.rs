@@ -550,3 +550,229 @@ assert.equal(Buffer.concat(chunks).toString(),'ok');
     assert_eq!(fixture.report()["warm_calls"], 3);
     assert_eq!(fixture.report()["cold_calls"], 0);
 }
+
+const JVM_AUTHOR_MARKER: &str = "MDRUN_JVM_AUTHOR_FIXTURE";
+const JVM_CALLS: [&str; 7] = [
+    "00-ignore",
+    "01-fail",
+    "02-binary",
+    "03-read-file",
+    "04-read-file-changed",
+    "05-echo",
+    "06-ignore",
+];
+
+fn jvm_mode_fixture(root: &Fixture, mode: &str, binding: &Value) -> Fixture {
+    let fixture = Fixture(root.0.join(mode));
+    fs::create_dir(&fixture.0).unwrap();
+    fixture.write("binding.json", serde_json::to_vec(binding).unwrap());
+    let input: Vec<u8> = (0..512 * 1024 + 17)
+        .map(|index| (index % 256) as u8)
+        .collect();
+    fixture.write("echo.input", input);
+    fixture
+}
+
+fn jvm_run_author(fixture: &Fixture, options: &[&str]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_mdrun"));
+    command
+        .args(["session", "--binding"])
+        .arg(fixture.0.join("binding.json"))
+        .arg("--report")
+        .arg(fixture.0.join("report.json"))
+        .args(options)
+        .arg("--")
+        .arg(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "session::jvm_author_fixture",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .current_dir(&fixture.0);
+    fixture.capture_with_environment(
+        &mut command,
+        &[(JVM_AUTHOR_MARKER, std::ffi::OsStr::new("1"))],
+    )
+}
+
+fn jvm_manifest() -> Value {
+    let prepared = PathBuf::from(
+        std::env::var_os("MDRUN_JVM_FIXTURE")
+            .expect("set MDRUN_JVM_FIXTURE to the prepared absolute fixture-manifest.json"),
+    );
+    assert!(prepared.is_absolute());
+    let manifest: Value = serde_json::from_slice(&fs::read(prepared).unwrap()).unwrap();
+    assert_eq!(manifest["schema_version"], 1);
+    manifest
+}
+
+#[test]
+#[ignore = "requires independently prepared JVM fixtures selected by MDRUN_JVM_FIXTURE"]
+fn jvm_packaged_cold_matches_required_warm_native_author() {
+    let manifest = jvm_manifest();
+    let binding = &manifest["binding"];
+    assert_eq!(binding["name"], "tool");
+    let cold_argv = binding["cold_argv"].as_array().unwrap();
+    assert_eq!(cold_argv.len(), 4);
+    assert_eq!(cold_argv[1], "-cp");
+    let cold_classpath = cold_argv[2].as_str().unwrap();
+    let cold_paths: Vec<_> = std::env::split_paths(cold_classpath).collect();
+    assert_eq!(
+        cold_paths.len(),
+        1,
+        "packaged cold must load no SDK or worker jars"
+    );
+    assert!(cold_paths[0].is_absolute());
+    assert_eq!(cold_paths[0].file_name().unwrap(), "cold.jar");
+    assert_eq!(cold_argv[3], "io.github.mbackschat.mdrun.fixture.ColdMain");
+
+    let root = Fixture::new();
+    let cold = jvm_mode_fixture(&root, "cold", binding);
+    let fast = jvm_mode_fixture(&root, "fast", binding);
+    let expected_statuses = [0, 17, 0, 0, 0, 0, 0];
+    let echo_input = fs::read(cold.0.join("echo.input")).unwrap();
+    let expected_stdout: [&[u8]; 7] = [
+        b"ok",
+        b"",
+        &[0, 255, 1, 2],
+        b"before application input changes\n",
+        b"after application input changes\0\xff\n",
+        &echo_input,
+        b"ok",
+    ];
+
+    for (fixture, options, warm_calls, cold_calls, worker_starts) in [
+        (&cold, &["--mode", "cold"][..], 0, 7, 0),
+        (&fast, &["--mode", "fast", "--require-warm"][..], 7, 0, 1),
+    ] {
+        let output = jvm_run_author(fixture, options);
+        assert!(
+            output.status.success(),
+            "native author failed: {}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        for (index, call) in JVM_CALLS.iter().enumerate() {
+            assert_eq!(
+                fs::read(fixture.0.join(format!("{call}.stdout"))).unwrap(),
+                expected_stdout[index],
+                "stdout for {call}"
+            );
+            let expected_stderr: &[u8] = if index == 2 { &[254, 0] } else { b"" };
+            assert_eq!(
+                fs::read(fixture.0.join(format!("{call}.stderr"))).unwrap(),
+                expected_stderr,
+                "stderr for {call}"
+            );
+            assert_eq!(
+                fs::read_to_string(fixture.0.join(format!("{call}.status"))).unwrap(),
+                format!("{}\n", expected_statuses[index]),
+                "status for {call}"
+            );
+        }
+        let report = fixture.report();
+        assert_eq!(report["artifact_id"], binding["artifact_id"]);
+        assert_eq!(report["warm_calls"], warm_calls);
+        assert_eq!(report["cold_calls"], cold_calls);
+        assert_eq!(report["worker_starts"], worker_starts);
+        if cold_calls != 0 {
+            assert_eq!(report["cold_reasons"]["explicit_cold"], cold_calls);
+        }
+        let statuses = report["application_statuses"].as_array().unwrap();
+        assert_eq!(statuses.len(), expected_statuses.len());
+        for (actual, expected) in statuses.iter().zip(expected_statuses) {
+            assert_eq!(actual["exit_code"], expected);
+            assert_eq!(actual["signal"], Value::Null);
+        }
+        assert_eq!(report["author_status"]["exit_code"], 0);
+        assert_eq!(report["outcome"], "success");
+        assert_eq!(report["infrastructure_failure"], Value::Null);
+        assert_eq!(report["cleanup"]["outcome"], "clean");
+    }
+
+    for call in JVM_CALLS {
+        for suffix in ["stdout", "stderr", "status"] {
+            let file = format!("{call}.{suffix}");
+            assert_eq!(
+                fs::read(cold.0.join(&file)).unwrap(),
+                fs::read(fast.0.join(&file)).unwrap(),
+                "packaged cold/warm parity for {file}"
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires independently prepared JVM fixtures selected by MDRUN_JVM_FIXTURE"]
+fn jvm_late_output_after_shutdown_fails_the_session_despite_successful_call() {
+    let manifest = jvm_manifest();
+    let fixture = Fixture::new();
+    fixture.write(
+        "binding.json",
+        serde_json::to_vec(&manifest["binding"]).unwrap(),
+    );
+    let output = fixture.run(&["--require-warm"], &["tool", "late_stdout"]);
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let report = fixture.report();
+    assert_eq!(report["author_status"]["exit_code"], 0);
+    assert_eq!(report["application_statuses"][0]["exit_code"], 0);
+    assert_eq!(report["warm_calls"], 1);
+    assert_eq!(report["cold_calls"], 0);
+    assert_eq!(report["worker_starts"], 1);
+    assert_eq!(
+        report["infrastructure_failure"],
+        "worker orderly shutdown failed"
+    );
+    assert_eq!(report["cleanup"]["outcome"], "clean");
+}
+
+#[test]
+#[ignore = "native author helper; no-op without its managed-session marker"]
+fn jvm_author_fixture() {
+    if std::env::var_os(JVM_AUTHOR_MARKER).as_deref() != Some(std::ffi::OsStr::new("1")) {
+        return;
+    }
+    for (index, (arguments, expected_status)) in [
+        (vec!["ignore"], 0),
+        (vec!["fail"], 17),
+        (vec!["binary"], 0),
+        (vec!["read_file", "mutable.input"], 0),
+        (vec!["read_file", "mutable.input"], 0),
+        (vec!["echo"], 0),
+        (vec!["ignore"], 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if index == 3 {
+            fs::write("mutable.input", b"before application input changes\n").unwrap();
+        } else if index == 4 {
+            fs::write("mutable.input", b"after application input changes\0\xff\n").unwrap();
+        }
+        let call = JVM_CALLS[index];
+        let input = if index == 5 {
+            Stdio::from(fs::File::open("echo.input").unwrap())
+        } else {
+            Stdio::null()
+        };
+        let status = Command::new("tool")
+            .args(arguments)
+            .stdin(input)
+            .stdout(fs::File::create(format!("{call}.stdout")).unwrap())
+            .stderr(fs::File::create(format!("{call}.stderr")).unwrap())
+            .status()
+            .unwrap();
+        fs::write(
+            format!("{call}.status"),
+            format!(
+                "{}\n",
+                status.code().expect("application terminated by signal")
+            ),
+        )
+        .unwrap();
+        assert_eq!(status.code(), Some(expected_status), "status for {call}");
+    }
+}

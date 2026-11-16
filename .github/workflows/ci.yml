@@ -33,7 +33,24 @@ jobs:
       - name: Qualify native sessions with Node
         timeout-minutes: 1
         run: |
-          MDRUN_NODE="$(command -v node)" cargo test --locked --test integration session:: -- --ignored
+          MDRUN_NODE="$(command -v node)" cargo test --locked --test integration session:: -- --ignored --skip session::jvm_
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Prepare hash-locked JVM SDK and independent cold fixture
+        timeout-minutes: 2
+        run: python3 tests/runtime/jvm/prepare.py --java-home "$JAVA_HOME" --download --output "$RUNNER_TEMP/jvm-fixture"
+      - name: Qualify the cooperative JVM SDK
+        timeout-minutes: 1
+        env:
+          MDRUN_JVM_FIXTURE: ${{ runner.temp }}/jvm-fixture/fixture-manifest.json
+        run: python3 tests/runtime/jvm/qualify.py
+      - name: Qualify native sessions with the JVM
+        timeout-minutes: 1
+        env:
+          MDRUN_JVM_FIXTURE: ${{ runner.temp }}/jvm-fixture/fixture-manifest.json
+        run: cargo test --locked --test integration session::jvm_ -- --ignored
       - run: cargo build --release --locked
       - uses: actions/upload-artifact@v7
         with:
@@ -42,7 +59,7 @@ jobs:
           retention-days: 7
       - run: python3 -m unittest discover -s packaging -p 'test_*.py'
       - run: python3 -m unittest discover -s tests/compatibility -p 'test_*.py'
-      - run: python3 -m unittest discover -s tests/tooling -p 'test_*.py'
+      - run: MDRUN_JAVA_HOME="$JAVA_HOME" python3 -m unittest discover -s tests/tooling -p 'test_*.py'
       - name: Check contributor entry point
         run: test -L AGENTS.md && test "$(readlink AGENTS.md)" = CLAUDE.md
 

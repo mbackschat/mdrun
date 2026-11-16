@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [python, rust, javascript-typescript]
+        language: [python, rust, javascript-typescript, java-kotlin]
     steps:
       - uses: actions/checkout@v7
       - name: Check dependency quarantine before Rust extraction

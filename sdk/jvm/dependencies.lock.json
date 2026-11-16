@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "minimum_age_days": 14,
+  "dependencies": [
+    {
+      "group_id": "com.fasterxml.jackson.core",
+      "artifact_id": "jackson-core",
+      "version": "2.22.4",
+      "published": "2026-10-17",
+      "release_notes_url": "https://raw.githubusercontent.com/FasterXML/jackson-core/jackson-core-2.22.4/release-notes/VERSION-2.x",
+      "artifact_url": "https://repo.maven.apache.org/maven2/com/fasterxml/jackson/core/jackson-core/2.22.4/jackson-core-2.22.4.jar",
+      "checksum_url": "https://repo.maven.apache.org/maven2/com/fasterxml/jackson/core/jackson-core/2.22.4/jackson-core-2.22.4.jar.sha256",
+      "sha256": "2d30c375cddea9657a1e1ef97547a2694b663b355facb4de53a097782b312d1a",
+      "publisher_checksum_verified": false,
+      "hash_provenance": "The recorded development hash awaits independent canonical Maven Central artifact verification before distribution.",
+      "license": "Apache-2.0",
+      "runtime_dependencies": [],
+      "bundled_notices": [
+        "META-INF/LICENSE",
+        "META-INF/NOTICE",
+        "META-INF/FastDoubleParser-LICENSE",
+        "META-INF/FastDoubleParser-ThirdParty-LICENSE",
+        "META-INF/Schubfach-LICENSE"
+      ]
+    }
+  ]
+}
