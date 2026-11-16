@@ -531,12 +531,20 @@ struct Group {
     child: Child,
     control: UnixStream,
     terminal: Option<TerminalRestore>,
-    planned: bool,
+    sweep: Sweep,
     forced: bool,
     done: bool,
     uncertain: bool,
     control_closed: bool,
     stopping: Option<Instant>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum Sweep {
+    NotRequested,
+    Pending,
+    Acknowledged,
 }
 
 enum LaunchOutcome {
@@ -572,20 +580,28 @@ fn stop_group(group: &mut Group) {
 }
 
 fn save_state(path: &Path, groups: &[Group], status: &str) -> io::Result<()> {
-    let groups: Vec<_> = groups.iter().map(|group| serde_json::json!({"id":group.id,"anchor_pid":group.child.id(),"clean":group.done,"uncertain":group.uncertain})).collect();
+    let groups: Vec<_> = groups.iter().map(|group| serde_json::json!({"id":group.id,"anchor_pid":group.child.id(),"clean":group.done,"uncertain":group.uncertain,"sweep":group.sweep})).collect();
+    let temporary = path.with_extension("status.tmp");
     let mut file = OpenOptions::new()
-        .create(true)
-        .truncate(true)
+        .create_new(true)
         .write(true)
         .mode(0o600)
-        .open(path.with_extension("status.json"))?;
-    file.set_permissions(fs::Permissions::from_mode(0o600))?;
-    serde_json::to_writer(
-        &mut file,
-        &serde_json::json!({"custodian_pid":std::process::id(),"status":status,"groups":groups}),
-    )
-    .map_err(invalid_data)?;
-    file.flush()
+        .open(&temporary)?;
+    let result = (|| {
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        serde_json::to_writer(
+            &mut file,
+            &serde_json::json!({"custodian_pid":std::process::id(),"status":status,"groups":groups}),
+        )
+        .map_err(invalid_data)?;
+        file.flush()?;
+        fs::rename(&temporary, path.with_extension("status.json"))
+    })();
+    drop(file);
+    if result.is_err() {
+        let _ = fs::remove_file(temporary);
+    }
+    result
 }
 
 pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
@@ -657,7 +673,7 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                             child,
                             control,
                             terminal: None,
-                            planned: false,
+                            sweep: Sweep::NotRequested,
                             forced: false,
                             done: false,
                             uncertain: false,
@@ -690,6 +706,15 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                                     group.child.id() as i32,
                                 )?;
                                 if let Some(terminal) = &group.terminal {
+                                    if groups.iter().any(|parent| {
+                                        !parent.done
+                                            && parent.child.id() as i32 == terminal.previous
+                                            && parent.sweep == Sweep::Acknowledged
+                                    }) {
+                                        return Err(io::Error::other(
+                                            "previous terminal group is already leaving custody",
+                                        ));
+                                    }
                                     terminal.grant()?;
                                 }
                                 Ok(())
@@ -782,6 +807,12 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
         if !owner_alive || admission_failed {
             stopping = true;
         }
+        // A terminal child must restore its predecessor before that predecessor's anchor can exit.
+        let terminal_parents: Vec<_> = groups
+            .iter()
+            .filter(|group| !group.done)
+            .filter_map(|group| group.terminal.as_ref().map(|terminal| terminal.previous))
+            .collect();
         for group in &mut groups {
             if stopping {
                 stop_group(group);
@@ -842,18 +873,10 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                         );
                     }
                     Ok(Some((AnchorEvent::Sweep { forced }, descriptors)))
-                        if descriptors.is_empty() =>
+                        if descriptors.is_empty() && group.sweep == Sweep::NotRequested =>
                     {
-                        group.planned = true;
+                        group.sweep = Sweep::Pending;
                         group.forced = forced;
-                        if send_packet(&mut group.control, &AnchorRequest::SweepAck, &[]).is_err() {
-                            uncertain(
-                                group,
-                                &mut owner,
-                                &mut owner_alive,
-                                "anchor sweep acknowledgement failed",
-                            );
-                        }
                     }
                     Ok(None) => group.control_closed = true,
                     _ => {
@@ -865,6 +888,20 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                             "anchor control or observation failed",
                         );
                     }
+                }
+            }
+            let restoring_child = terminal_parents.contains(&(group.child.id() as i32));
+            if group.sweep == Sweep::Pending && !restoring_child && !group.uncertain {
+                if send_packet(&mut group.control, &AnchorRequest::SweepAck, &[]).is_err() {
+                    uncertain(
+                        group,
+                        &mut owner,
+                        &mut owner_alive,
+                        "anchor sweep acknowledgement failed",
+                    );
+                } else {
+                    group.sweep = Sweep::Acknowledged;
+                    group.stopping = Some(Instant::now());
                 }
             }
             let mut status = unsafe { std::mem::zeroed::<libc::siginfo_t>() };
@@ -884,7 +921,7 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                     "anchor exit observation failed",
                 );
             } else if unsafe { status.si_pid() } != 0 && group.control_closed {
-                if !group.planned
+                if group.sweep != Sweep::Acknowledged
                     || status.si_code != libc::CLD_KILLED
                     || unsafe { status.si_status() } != libc::SIGKILL
                 {
@@ -934,6 +971,7 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
             if group.stopping.is_some_and(|time| {
                 time.elapsed() >= Duration::from_millis(config.cleanup_timeout_ms)
             }) && !group.done
+                && !(group.sweep == Sweep::Pending && restoring_child)
             {
                 uncertain(
                     group,
@@ -950,7 +988,7 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
             stopping,
             groups
                 .iter()
-                .map(|group| (group.done, group.uncertain))
+                .map(|group| (group.done, group.uncertain, group.sweep))
                 .collect::<Vec<_>>(),
         );
         if last_state.as_ref() != Some(&state) {
@@ -1014,6 +1052,12 @@ fn sweep_anchor(control: &mut UnixStream, forced: bool, interruption: &mut bool)
         retain_anchor(control);
     }
     loop {
+        // Nested terminal cleanup may defer acknowledgment beyond the control socket's read timeout.
+        match readable(control, Duration::from_millis(10)) {
+            Ok(false) => continue,
+            Ok(true) => {}
+            Err(_) => retain_anchor(control),
+        }
         match receive_packet::<AnchorRequest>(control) {
             Ok(Some((AnchorRequest::SweepAck, descriptors))) if descriptors.is_empty() => break,
             Ok(Some((AnchorRequest::Stop, descriptors))) if descriptors.is_empty() => {}
@@ -1167,6 +1211,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn custody_status_readers_retain_one_complete_snapshot_during_update() {
+        use std::io::Read;
+        let directory =
+            std::env::temp_dir().join(format!("mdrun-custody-snapshot-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&directory).unwrap();
+        let outcome = (|| -> io::Result<(serde_json::Value, serde_json::Value)> {
+            let path = directory.join("custody.json");
+            save_state(&path, &[], "ready")?;
+            let mut reader = File::open(path.with_extension("status.json"))?;
+            save_state(&path, &[], "released")?;
+            let mut original = String::new();
+            reader.read_to_string(&mut original)?;
+            let original = serde_json::from_str(&original).map_err(invalid_data)?;
+            let current = serde_json::from_reader(File::open(path.with_extension("status.json"))?)
+                .map_err(invalid_data)?;
+            Ok((original, current))
+        })();
+        fs::remove_dir_all(&directory).unwrap();
+        let (original, current) = outcome.unwrap();
+        assert_eq!(original["status"], "ready");
+        assert_eq!(current["status"], "released");
+    }
+
+    #[test]
     fn pregrant_anchor_fixture() {
         if std::env::var_os("MDRUN_PREGRANT_ANCHOR_FIXTURE").is_some() {
             run_anchor().unwrap();
@@ -1176,16 +1244,21 @@ mod tests {
 
     #[test]
     fn stop_before_payload_grant_certifies_an_empty_group_without_execution() {
-        exercise_pregrant(Some(AnchorRequest::Stop), true);
+        exercise_pregrant(Some(AnchorRequest::Stop), true, Duration::ZERO);
+    }
+
+    #[test]
+    fn pending_sweep_waits_for_its_acknowledgement_without_authorizing_payload() {
+        exercise_pregrant(Some(AnchorRequest::Stop), true, Duration::from_secs(6));
     }
 
     #[test]
     fn invalid_or_closed_pregrant_control_retains_uncertainty() {
-        exercise_pregrant(Some(AnchorRequest::SweepAck), false);
-        exercise_pregrant(None, false);
+        exercise_pregrant(Some(AnchorRequest::SweepAck), false, Duration::ZERO);
+        exercise_pregrant(None, false, Duration::ZERO);
     }
 
-    fn exercise_pregrant(request: Option<AnchorRequest>, expect_sweep: bool) {
+    fn exercise_pregrant(request: Option<AnchorRequest>, expect_sweep: bool, ack_delay: Duration) {
         let marker =
             std::env::temp_dir().join(format!("mdrun-pregrant-effect-{}", uuid::Uuid::new_v4()));
         let (mut control, bootstrap) = UnixStream::pair().unwrap();
@@ -1264,6 +1337,7 @@ mod tests {
                     serde_json::to_string(&event.map(|(event, _)| event)).unwrap()
                 )));
             }
+            std::thread::sleep(ack_delay);
             send_packet(&mut control, &AnchorRequest::SweepAck, &[])?;
             let deadline = Instant::now() + Duration::from_secs(2);
             loop {
