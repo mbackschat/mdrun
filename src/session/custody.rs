@@ -593,6 +593,7 @@ struct Group {
     forced: bool,
     done: bool,
     uncertain: bool,
+    uncertainty_reason: Option<String>,
     control_closed: bool,
     stopping: Option<Instant>,
     cleanup_timeout: Duration,
@@ -675,6 +676,7 @@ fn emit(owner: &mut UnixStream, owner_alive: &mut bool, event: &CustodyEvent) {
 fn uncertain(group: &mut Group, owner: &mut UnixStream, owner_alive: &mut bool, reason: &str) {
     if !group.uncertain {
         group.uncertain = true;
+        group.uncertainty_reason = Some(reason.to_owned());
         emit_group(
             owner,
             owner_alive,
@@ -698,6 +700,7 @@ fn save_state(path: &Path, groups: &[Group], scopes: &[Scope], status: &str) -> 
     let groups: Vec<_> = groups.iter().map(|group| {
         let mut state = serde_json::json!({"id":group.key.id,"anchor_pid":group.child.id(),"clean":group.done,"uncertain":group.uncertain,"sweep":group.sweep});
         if let Some(scope) = &group.key.scope { state["scope"] = serde_json::json!(scope); }
+        if let Some(reason) = &group.uncertainty_reason { state["uncertainty_reason"] = serde_json::json!(reason); }
         state
     }).collect();
     let scopes: Vec<_> = scopes
@@ -922,6 +925,7 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                             forced: false,
                             done: false,
                             uncertain: false,
+                            uncertainty_reason: None,
                             control_closed: false,
                             stopping: None,
                             cleanup_timeout,

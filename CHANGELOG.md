@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Handle Linux procfs records for already-dead processes with detached process-group IDs without falsely retaining custody; retain the first cleanup-uncertainty reason in private status snapshots.
 - Add versioned JVM, Node and Python SDK archives and a standard Python wheel for checksum-pinned GitHub release consumption, including isolated `uv` installation.
 - Report ordinary CLI usage errors when native launchers omit or empty the executable argument, including inside a managed session.
 - Add experimental `verify-many` with bounded document admission, shared resource custody, ordered output and aggregate reports; platform/lifecycle qualification remains open.

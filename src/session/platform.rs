@@ -137,7 +137,9 @@ fn parse_linux_stat(stat: &[u8]) -> io::Result<(libc::pid_t, u8)> {
         .map_err(|_| invalid())?
         .parse::<libc::pid_t>()
         .map_err(|_| invalid())?;
-    if group < 0 {
+    // do_task_stat can retain its -1 pgid sentinel after a dead task loses sighand.
+    // https://github.com/torvalds/linux/blob/v6.12/fs/proc/array.c#L442-L509
+    if group < 0 && !(group == -1 && matches!(state, b'Z' | b'X' | b'x')) {
         return Err(invalid());
     }
     Ok((group, state))
@@ -249,6 +251,20 @@ mod tests {
             parse_linux_stat(b"2 (kthreadd) S 0 0 0 0").unwrap(),
             (0, b'S')
         );
+    }
+
+    #[test]
+    fn dead_procfs_records_can_have_already_detached_process_groups() {
+        for state in *b"ZXx" {
+            let record = format!("7313 (sleep) {} 0 -1 -1 0 -1", state as char);
+            assert_eq!(parse_linux_stat(record.as_bytes()).unwrap(), (-1, state));
+        }
+        for state in *b"RSDTI" {
+            let record = format!("7313 (sleep) {} 0 -1 -1 0 -1", state as char);
+            assert!(parse_linux_stat(record.as_bytes()).is_err());
+        }
+        assert!(parse_linux_stat(b"7313 (sleep) X 0 invalid -1").is_err());
+        assert!(parse_linux_stat(b"7313 (sleep) X 0 -2 -1").is_err());
     }
 
     #[test]

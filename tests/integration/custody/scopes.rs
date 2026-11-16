@@ -438,6 +438,10 @@ fn scoped_anchor_uncertainty_keeps_the_batch_excluded_without_clean_completion()
             .unwrap();
     assert_eq!(state["groups"][0]["scope"], "failed");
     assert_eq!(state["groups"][0]["clean"], false);
+    assert_eq!(
+        state["groups"][0]["uncertainty_reason"],
+        event["event"]["reason"]
+    );
     assert_eq!(state["groups"][1]["scope"], "sibling");
     assert_eq!(state["groups"][1]["clean"], true);
     drop(controller);
