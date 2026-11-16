@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust checks
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy && rustup default stable
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - run: python3 -m unittest discover -s packaging -p 'test_*.py'
+      - name: Check contributor entry point
+        run: test -L AGENTS.md && test "$(readlink AGENTS.md)" = CLAUDE.md
+      - name: Verify preserved research
+        if: runner.os == 'Linux'
+        run: |
+          sha256sum --check docs/research/showboat-like-tool.sha256
+          git bundle verify docs/research/showboat-like-tool.bundle

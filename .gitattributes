@@ -1,0 +1,4 @@
+* text=auto eol=lf
+# Preserve imported evidence byte for byte, including historical whitespace.
+/docs/research/showboat-like-tool/** -text -whitespace
+*.bundle binary

@@ -1,0 +1,36 @@
+[package]
+name = "mdrun"
+version = "0.1.0"
+edition = "2024"
+description = "Create, run, and verify executable Markdown documents"
+license = "MIT"
+repository = "https://github.com/mbackschat/mdrun"
+publish = false
+
+[package.metadata.deb]
+maintainer = "Martin Backschat <mbackschat@mail.de>"
+section = "devel"
+depends = []
+license-file = ["LICENSE", "0"]
+assets = [
+    ["target/release/mdrun", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/mdrun/", "644"],
+    ["CHANGELOG.md", "usr/share/doc/mdrun/", "644"],
+    ["LICENSE", "usr/share/doc/mdrun/", "644"],
+]
+
+[package.metadata.generate-rpm]
+auto-req = "no"
+assets = [
+    { source = "target/release/mdrun", dest = "/usr/bin/mdrun", mode = "755" },
+    { source = "README.md", dest = "/usr/share/doc/mdrun/README.md", mode = "644", doc = true },
+    { source = "CHANGELOG.md", dest = "/usr/share/doc/mdrun/CHANGELOG.md", mode = "644", doc = true },
+    { source = "LICENSE", dest = "/usr/share/licenses/mdrun/LICENSE", mode = "644" },
+]
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.release]
+strip = true
+lto = "thin"
