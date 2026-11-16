@@ -1,13 +1,15 @@
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
-import { createServer } from 'node:net';
+import { existsSync } from 'node:fs';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { createConnection, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 
 // The fake host deliberately implements framing independently of the SDK.
 class Peer {
@@ -57,7 +59,7 @@ class Peer {
     }
 }
 
-async function host(t) {
+async function host(t, fixture = new URL('./fixture-worker.mjs', import.meta.url)) {
     const directory = await mkdtemp(join(tmpdir(), 'mdrun-node-'));
     t.after(() => rm(directory, { recursive: true, force: true }));
     const server = createServer();
@@ -84,7 +86,7 @@ async function host(t) {
     await once(server, 'listening');
     const configPath = join(directory, 'config.json');
     await writeFile(configPath, JSON.stringify({ ...identity, connect: { host: '127.0.0.1', port: server.address().port } }), { mode: 0o600 });
-    const worker = spawn(process.execPath, [fileURLToPath(new URL('./fixture-worker.mjs', import.meta.url)), configPath], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const worker = spawn(process.execPath, [fileURLToPath(fixture), configPath], { stdio: ['ignore', 'pipe', 'pipe'] });
     let diagnostics = '';
     worker.stderr.on('data', bytes => { diagnostics += bytes; });
     const exited = new Promise(resolve => worker.once('exit', (code, signal) => resolve({ code, signal })));
@@ -104,7 +106,7 @@ async function host(t) {
     const ready = await data.next();
     assert.deepEqual(ready, { kind: 'ready', protocol: 1, session_id: identity.session_id, artifact_id: identity.artifact_id, capabilities: ['pull_stdin', 'sequenced_output', 'release_ack'] });
     return {
-        data, control, worker, exited,
+        data, control, worker, exited, directory,
         async classify(command, requestId = 'one') {
             data.send({ kind: 'classify', request_id: requestId, argv: [command] });
             return await data.next();
@@ -335,5 +337,111 @@ for (const base64 of ['YQ', 'YR==', '', 'YQ===']) {
         h.data.send({ kind: 'stdin', request_id: 'one', base64 });
         assert.equal((await h.data.next()).kind, 'fault');
         assert.equal((await h.exited).code, 70);
+    });
+}
+
+async function lifecycleFile(h, name) {
+    const deadline = performance.now() + 1000;
+    for (;;) {
+        try { return JSON.parse(await readFile(join(h.directory, name), 'utf8')); } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+            assert.ok(performance.now() < deadline, `missing lifecycle observation ${name}`);
+            await delay(5);
+        }
+    }
+}
+
+async function resourceReply(port) {
+    return await new Promise((resolve, reject) => {
+        const socket = createConnection({ host: '127.0.0.1', port });
+        let bytes = '';
+        socket.setTimeout(500, () => socket.destroy(new Error('resource observation deadline')));
+        socket.on('data', chunk => {
+            bytes += chunk.toString('utf8');
+            if (bytes.length > 64) socket.destroy(new Error('unexpected resource response'));
+        });
+        socket.on('end', () => { socket.destroy(); resolve(bytes); });
+        socket.on('error', error => {
+            socket.destroy();
+            if (error.code === 'ECONNREFUSED') resolve(null);
+            else reject(error);
+        });
+    });
+}
+
+async function ownedResourcesLive(h, state) {
+    if (state.kinds.includes('timer')) {
+        const first = await lifecycleFile(h, 'timer.progress');
+        assert.ok(Number.isSafeInteger(first) && first > 0);
+        const deadline = performance.now() + 500;
+        while (await lifecycleFile(h, 'timer.progress') <= first) {
+            assert.ok(performance.now() < deadline, 'owned timer did not advance');
+            await delay(5);
+        }
+    }
+    if (state.kinds.includes('listener')) assert.equal(await resourceReply(state.listenerPort), 'listener-live\n');
+    if (state.kinds.includes('child')) assert.equal(await resourceReply(state.childPort), 'child-live\n');
+}
+
+async function finishLifecycle(h, state) {
+    await writeFile(join(h.directory, 'invoke.continue'), '');
+    await writeFile(join(h.directory, 'cleanup.continue'), '');
+    h.data.socket.destroy();
+    h.control.socket.destroy();
+    let forced = false;
+    const deadline = setTimeout(() => { forced = true; h.worker.kill('SIGKILL'); }, 1500);
+    let status;
+    try { status = await h.exited; } finally { clearTimeout(deadline); }
+    const until = performance.now() + 1000;
+    for (const port of [state?.listenerPort, state?.childPort].filter(value => value !== undefined)) {
+        while (await resourceReply(port) !== null) {
+            assert.ok(performance.now() < until, 'owned resource remained live after worker exit');
+            await delay(5);
+        }
+    }
+    assert.equal(forced, false, 'owned worker required fixture teardown escalation');
+    assert.deepEqual(await lifecycleFile(h, 'cleanup.closed.json'), { clean: true });
+    for (const name of ['worker.expired', 'child.expired', 'child.cleanup.failed', 'cleanup.expired.json', 'cleanup.failed.json']) {
+        assert.equal(existsSync(join(h.directory, name)), false, name);
+    }
+    if (state?.kinds.includes('child')) {
+        assert.deepEqual(await lifecycleFile(h, 'child.observed.json'), { code: 0, signal: null });
+        assert.deepEqual(await lifecycleFile(h, 'child.closed.json'), { port: state.childPort });
+    }
+    return status;
+}
+
+for (const kind of ['clean', 'timer', 'listener', 'child']) {
+    test(`application-owned ${kind} resources are attested before bootstrap cleanup`, async t => {
+        const h = await host(t, new URL('./lifecycle-worker.mjs', import.meta.url));
+        let state;
+        try {
+            await h.invoke(kind);
+            state = await lifecycleFile(h, 'owned.ready.json');
+            assert.deepEqual(state.kinds, kind === 'clean' ? ['timer', 'listener', 'child'] : [kind]);
+            await ownedResourcesLive(h, state);
+            await writeFile(join(h.directory, 'invoke.continue'), '');
+            if (kind === 'clean') {
+                assert.deepEqual(await h.data.next(), { kind: 'complete', request_id: 'one', exit_code: 0 });
+                assert.deepEqual(await lifecycleFile(h, 'invocation.closed.json'), { clean: true });
+                await h.release();
+                await h.invoke('ignore', 'two');
+                assert.deepEqual(await h.data.next(), { kind: 'output', request_id: 'two', sequence: 0, stream: 'stdout', base64: 'b2s=' });
+                assert.deepEqual(await h.data.next(), { kind: 'complete', request_id: 'two', exit_code: 0 });
+                await h.release('two');
+                await h.shutdown();
+            } else {
+                assert.deepEqual(await h.data.next(), { kind: 'fault', request_id: 'one', reason: 'reset_failed' });
+                assert.deepEqual(await lifecycleFile(h, 'reset.failed.json'), { actor: kind });
+                await lifecycleFile(h, 'cleanup.pending.json');
+                assert.equal(existsSync(join(h.directory, 'cleanup.started.json')), false);
+                assert.equal(h.worker.exitCode, null);
+                assert.equal(h.worker.signalCode, null);
+                await ownedResourcesLive(h, state);
+                assert.ok(!h.data.frames.some(frame => frame.kind === 'complete'));
+            }
+        } finally {
+            assert.deepEqual(await finishLifecycle(h, state), { code: kind === 'clean' ? 0 : 70, signal: null });
+        }
     });
 }
