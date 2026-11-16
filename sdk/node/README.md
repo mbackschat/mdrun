@@ -2,10 +2,12 @@
 
 This dependency-free ESM peer implements the proposed [session protocol](../../docs/plans/session-protocol.md). It is an experimental vertical slice, not a qualified public API or an automatic Node state reset facility. Fake-host and Rust-host interoperability tests pass with Node v26.10.0 on macOS and Linux; [execution qualification](../../docs/plans/execution.md) records the revisions and remaining application/lifecycle gates.
 
+Use the [versioned SDK download and preparation guide](../../docs/sdk-distribution.md) to pin a host/SDK version and archive digest in local and CI builds without a source checkout. The prepared directory contains `index.mjs`; import it explicitly from your worker bootstrap. The archive has no registry or external runtime dependencies. Keep the independent cold entrypoint SDK-free.
+
 The application bootstrap loads its handler and establishes its baseline resources before calling `runWorker`. The host appends one private startup configuration path to `worker_argv`; the bootstrap passes that path directly and does not need another command-line parser. For an ESM entry point whose only argument is that path:
 
 ```js
-import { runWorker } from './sdk/node/index.mjs';
+import { runWorker } from './index.mjs';
 import { classify, invoke, reset } from './application-adapter.mjs';
 
 try {

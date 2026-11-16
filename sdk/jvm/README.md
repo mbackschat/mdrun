@@ -4,6 +4,10 @@ This Java 21 peer implements the proposed [session protocol](../../docs/plans/se
 
 ## Prepare the SDK
 
+For consumer builds, use the [versioned SDK download and preparation guide](../../docs/sdk-distribution.md). The JVM archive already contains the prepared SDK and locked Jackson jars, POM, dependency provenance, licenses and hashes; a source checkout, Maven and a compiler are unnecessary to prepare that archive. A Java 21 runtime remains necessary to run a worker, and compiling your own adapter requires a Java 21 JDK. Pin the exact host/SDK version and archive digest in both local and CI builds.
+
+Source contributors can reproduce the prepared jar as follows.
+
 Run the [preparation helper](../../scripts/prepare_jvm.py) from the repository root with a Java 21 JDK, an explicitly prepared Jackson core jar and a new or empty output directory:
 
 ```sh

@@ -17,6 +17,7 @@ Document CLI and read-only discovery are implemented; earlier macOS/Linux qualif
 | [Python SDK](../sdk/python/README.md) | Experimental cooperative Python application API, binary streams and cancellation limits |
 | [Deferred work](DEFERRED.md) | Unscheduled scope and reopening conditions |
 | [Distribution](distribution.md) | Release targets, artifacts, Homebrew and Linux package qualification |
+| [SDK release consumption](sdk-distribution.md) | Version- and checksum-pinned GitHub SDK artifacts for local development and CI |
 | [Dependency choices](dependencies.md) | Reasons for compiled libraries and qualification policy |
 | [Security](security.md) | Dependency quarantine, security-fix exceptions and GitHub scanning |
 | [Research](research/README.md) | Extracted conclusions and source provenance |

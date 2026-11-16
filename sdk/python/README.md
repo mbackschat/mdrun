@@ -1,6 +1,10 @@
 # Experimental Python worker SDK
 
-This dependency-free package implements the proposed [session protocol](../../docs/plans/session-protocol.md) for one cooperative application in a dedicated Python process. The API is experimental. The native Rust host remains standalone; Python is required only for a separately launched Python worker. This foundation does not publish a package or establish arbitrary Python state/resource cleanup.
+This dependency-free package implements the proposed [session protocol](../../docs/plans/session-protocol.md) for one cooperative application in a dedicated Python process. The API is experimental. The native Rust host remains standalone; Python is required only for a separately launched Python worker. Registry publication remains deferred; the SDK does not establish arbitrary Python state/resource cleanup.
+
+## Prepare the SDK
+
+Use the [versioned SDK download and preparation guide](../../docs/sdk-distribution.md) to pin a host/SDK version and archive digest in local and CI builds without a source checkout. Add that prepared directory, containing `mdrun_sdk/__init__.py`, to your worker's Python import path. The archive requires only the standard library; it contains no application adapter or tests. Keep the independent cold entrypoint SDK-free.
 
 ## Implement an adapter
 
