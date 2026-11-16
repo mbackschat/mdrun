@@ -1242,7 +1242,9 @@ mod tests {
                         match TcpListener::bind(address) {
                             Err(error) if error.kind() == io::ErrorKind::AddrInUse => {}
                             _ => {
-                                return Err(io::Error::other("uncertain anchor released its lease"));
+                                return Err(io::Error::other(
+                                    "uncertain anchor released its lease",
+                                ));
                             }
                         }
                         if Instant::now() >= until {
