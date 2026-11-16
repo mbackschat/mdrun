@@ -472,6 +472,12 @@ impl State {
                 }
             }
             CustodyEvent::Ready | CustodyEvent::Started { .. } => {}
+            CustodyEvent::ScopeRegistered { .. }
+            | CustodyEvent::ScopeRejected { .. }
+            | CustodyEvent::ScopeEvent { .. }
+            | CustodyEvent::ScopeStopped { .. } => {
+                self.fail("unexpected scoped custody event in standalone session");
+            }
         }
     }
 }

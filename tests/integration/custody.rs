@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+mod scopes;
+
 struct Directory(PathBuf);
 impl Directory {
     fn new() -> Self {

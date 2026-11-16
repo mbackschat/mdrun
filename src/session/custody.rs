@@ -54,6 +54,21 @@ pub enum CustodyEvent {
     Uncertain { id: Option<String>, reason: String },
     Fault { reason: String },
     Stopped { clean: bool },
+    ScopeRegistered { scope: String },
+    ScopeRejected { scope: String, reason: String },
+    ScopeEvent { scope: String, event: GroupEvent },
+    ScopeStopped { scope: String, clean: bool },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum GroupEvent {
+    Started { id: String, pid: u32, group: i32 },
+    Exited { id: String, status: PayloadStatus },
+    Clean { id: String, forced: bool },
+    Uncertain { id: Option<String>, reason: String },
+    Fault { reason: String },
+    Rejected { id: String, reason: String },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -66,8 +81,25 @@ struct Packet<T> {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum OwnerRequest {
-    Spawn { id: String, spec: SpawnSpec },
-    StopGroup { id: String },
+    Spawn {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scope: Option<String>,
+        id: String,
+        spec: SpawnSpec,
+    },
+    StopGroup {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scope: Option<String>,
+        id: String,
+    },
+    RegisterScope {
+        scope: String,
+        session_timeout_ms: u64,
+        cleanup_timeout_ms: u64,
+    },
+    StopScope {
+        scope: String,
+    },
     Stop,
 }
 
@@ -152,6 +184,7 @@ impl Custody {
         send_packet(
             &mut self.control,
             &OwnerRequest::Spawn {
+                scope: None,
                 id: id.to_owned(),
                 spec: spec.clone(),
             },
@@ -527,7 +560,7 @@ fn foreground(descriptor: i32, group: i32) -> io::Result<()> {
 }
 
 struct Group {
-    id: String,
+    key: GroupKey,
     child: Child,
     control: UnixStream,
     terminal: Option<TerminalRestore>,
@@ -537,6 +570,62 @@ struct Group {
     uncertain: bool,
     control_closed: bool,
     stopping: Option<Instant>,
+    cleanup_timeout: Duration,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct GroupKey {
+    scope: Option<String>,
+    id: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ScopePhase {
+    Running,
+    Stopping,
+    Stopped,
+}
+
+struct Scope {
+    id: String,
+    phase: ScopePhase,
+    started: Instant,
+    session_timeout: Duration,
+    cleanup_timeout: Duration,
+    failed: bool,
+}
+
+fn emit_group(owner: &mut UnixStream, owner_alive: &mut bool, key: &GroupKey, event: GroupEvent) {
+    let event = match &key.scope {
+        Some(scope) => CustodyEvent::ScopeEvent {
+            scope: scope.clone(),
+            event,
+        },
+        None => match event {
+            GroupEvent::Started { id, pid, group } => CustodyEvent::Started { id, pid, group },
+            GroupEvent::Exited { id, status } => CustodyEvent::Exited { id, status },
+            GroupEvent::Clean { id, forced } => CustodyEvent::Clean { id, forced },
+            GroupEvent::Uncertain { id, reason } => CustodyEvent::Uncertain { id, reason },
+            GroupEvent::Fault { reason } | GroupEvent::Rejected { reason, .. } => {
+                CustodyEvent::Fault { reason }
+            }
+        },
+    };
+    emit(owner, owner_alive, &event);
+}
+
+fn fail_scope(scopes: &mut [Scope], key: &GroupKey, admission_failed: &mut bool) {
+    if let Some(scope) = key
+        .scope
+        .as_ref()
+        .and_then(|id| scopes.iter_mut().find(|scope| &scope.id == id))
+    {
+        scope.failed = true;
+        scope.phase = ScopePhase::Stopping;
+    } else {
+        *admission_failed = true;
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Serialize)]
@@ -561,11 +650,12 @@ fn emit(owner: &mut UnixStream, owner_alive: &mut bool, event: &CustodyEvent) {
 fn uncertain(group: &mut Group, owner: &mut UnixStream, owner_alive: &mut bool, reason: &str) {
     if !group.uncertain {
         group.uncertain = true;
-        emit(
+        emit_group(
             owner,
             owner_alive,
-            &CustodyEvent::Uncertain {
-                id: Some(group.id.clone()),
+            &group.key,
+            GroupEvent::Uncertain {
+                id: Some(group.key.id.clone()),
                 reason: reason.to_owned(),
             },
         );
@@ -579,8 +669,21 @@ fn stop_group(group: &mut Group) {
     }
 }
 
-fn save_state(path: &Path, groups: &[Group], status: &str) -> io::Result<()> {
-    let groups: Vec<_> = groups.iter().map(|group| serde_json::json!({"id":group.id,"anchor_pid":group.child.id(),"clean":group.done,"uncertain":group.uncertain,"sweep":group.sweep})).collect();
+fn save_state(path: &Path, groups: &[Group], scopes: &[Scope], status: &str) -> io::Result<()> {
+    let groups: Vec<_> = groups.iter().map(|group| {
+        let mut state = serde_json::json!({"id":group.key.id,"anchor_pid":group.child.id(),"clean":group.done,"uncertain":group.uncertain,"sweep":group.sweep});
+        if let Some(scope) = &group.key.scope { state["scope"] = serde_json::json!(scope); }
+        state
+    }).collect();
+    let scopes: Vec<_> = scopes
+        .iter()
+        .map(|scope| serde_json::json!({"id":scope.id,"phase":scope.phase,"failed":scope.failed}))
+        .collect();
+    let mut state =
+        serde_json::json!({"custodian_pid":std::process::id(),"status":status,"groups":groups});
+    if !scopes.is_empty() {
+        state["scopes"] = serde_json::json!(scopes);
+    }
     let temporary = path.with_extension("status.tmp");
     let mut file = OpenOptions::new()
         .create_new(true)
@@ -589,11 +692,7 @@ fn save_state(path: &Path, groups: &[Group], status: &str) -> io::Result<()> {
         .open(&temporary)?;
     let result = (|| {
         file.set_permissions(fs::Permissions::from_mode(0o600))?;
-        serde_json::to_writer(
-            &mut file,
-            &serde_json::json!({"custodian_pid":std::process::id(),"status":status,"groups":groups}),
-        )
-        .map_err(invalid_data)?;
+        serde_json::to_writer(&mut file, &state).map_err(invalid_data)?;
         file.flush()?;
         fs::rename(&temporary, path.with_extension("status.json"))
     })();
@@ -633,30 +732,151 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
     }
     let executable = std::env::current_exe()?;
     let mut groups: Vec<Group> = Vec::new();
+    let mut scopes: Vec<Scope> = Vec::new();
     let mut owner_alive = true;
     let mut stopping = false;
     let mut admission_failed = false;
     let mut last_state = None;
     let started = Instant::now();
-    save_state(private_config_path, &groups, "ready")?;
+    save_state(private_config_path, &groups, &scopes, "ready")?;
     send_packet(&mut owner, &CustodyEvent::Ready, &[])?;
     loop {
-        if owner_alive && readable(&owner, Duration::from_millis(10))? {
+        let owner_readable = owner_alive && readable(&owner, Duration::from_millis(10))?;
+        for scope in &mut scopes {
+            if scope.phase == ScopePhase::Running
+                && scope.started.elapsed() >= scope.session_timeout
+            {
+                scope.failed = true;
+                scope.phase = ScopePhase::Stopping;
+                emit(
+                    &mut owner,
+                    &mut owner_alive,
+                    &CustodyEvent::ScopeEvent {
+                        scope: scope.id.clone(),
+                        event: GroupEvent::Fault {
+                            reason: "scope deadline expired".to_owned(),
+                        },
+                    },
+                );
+            }
+        }
+        if owner_readable {
             match receive_packet::<OwnerRequest>(&mut owner) {
-                Ok(Some((OwnerRequest::Spawn { id, spec }, descriptors)))
+                Ok(Some((
+                    OwnerRequest::RegisterScope {
+                        scope,
+                        session_timeout_ms,
+                        cleanup_timeout_ms,
+                    },
+                    descriptors,
+                ))) if !stopping && !admission_failed => {
+                    if !descriptors.is_empty()
+                        || scope.is_empty()
+                        || scope.len() > 128
+                        || session_timeout_ms == 0
+                        || cleanup_timeout_ms == 0
+                        || scopes.iter().any(|registered| registered.id == scope)
+                        || (scopes.is_empty() && !groups.is_empty())
+                    {
+                        admission_failed = true;
+                        emit(
+                            &mut owner,
+                            &mut owner_alive,
+                            &CustodyEvent::Fault {
+                                reason: "invalid custody scope registration".to_owned(),
+                            },
+                        );
+                    } else if scopes.iter().any(|scope| scope.failed) {
+                        emit(
+                            &mut owner,
+                            &mut owner_alive,
+                            &CustodyEvent::ScopeRejected {
+                                scope,
+                                reason: "scope admission closed".to_owned(),
+                            },
+                        );
+                    } else {
+                        scopes.push(Scope {
+                            id: scope.clone(),
+                            phase: ScopePhase::Running,
+                            started: Instant::now(),
+                            session_timeout: Duration::from_millis(session_timeout_ms),
+                            cleanup_timeout: Duration::from_millis(cleanup_timeout_ms),
+                            failed: false,
+                        });
+                        emit(
+                            &mut owner,
+                            &mut owner_alive,
+                            &CustodyEvent::ScopeRegistered { scope },
+                        );
+                    }
+                }
+                Ok(Some((OwnerRequest::StopScope { scope }, descriptors)))
+                    if descriptors.is_empty() =>
+                {
+                    if let Some(scope) = scopes.iter_mut().find(|registered| registered.id == scope)
+                    {
+                        if scope.phase == ScopePhase::Running {
+                            scope.phase = ScopePhase::Stopping;
+                        }
+                    } else {
+                        admission_failed = true;
+                        emit(
+                            &mut owner,
+                            &mut owner_alive,
+                            &CustodyEvent::Fault {
+                                reason: "unknown custody scope".to_owned(),
+                            },
+                        );
+                    }
+                }
+                Ok(Some((OwnerRequest::Spawn { scope, id, spec }, descriptors)))
                     if !stopping && !admission_failed =>
                 {
-                    if validate_spawn(&id, &spec).is_err()
+                    let key = GroupKey { scope, id };
+                    let registered = key
+                        .scope
+                        .as_ref()
+                        .and_then(|id| scopes.iter().find(|scope| &scope.id == id));
+                    let invalid_scope = if key.scope.is_some() {
+                        registered.is_none()
+                    } else {
+                        !scopes.is_empty()
+                    };
+                    let cleanup_timeout = registered
+                        .map_or(Duration::from_millis(config.cleanup_timeout_ms), |scope| {
+                            scope.cleanup_timeout
+                        });
+                    if validate_spawn(&key.id, &spec).is_err()
                         || descriptors.len() != 3
-                        || groups.iter().any(|group| group.id == id)
+                        || invalid_scope
                     {
                         admission_failed = true;
                         emit(
                             &mut owner,
                             &mut owner_alive,
                             &CustodyEvent::Uncertain {
-                                id: Some(id),
+                                id: Some(key.id.clone()),
                                 reason: "invalid custody launch request".to_owned(),
+                            },
+                        );
+                    } else if registered.is_some_and(|scope| scope.phase != ScopePhase::Running) {
+                        emit_group(
+                            &mut owner,
+                            &mut owner_alive,
+                            &key,
+                            GroupEvent::Rejected {
+                                id: key.id.clone(),
+                                reason: "scope admission closed".to_owned(),
+                            },
+                        );
+                    } else if groups.iter().any(|group| group.key == key) {
+                        admission_failed = true;
+                        emit(
+                            &mut owner,
+                            &mut owner_alive,
+                            &CustodyEvent::Fault {
+                                reason: "duplicate owned group".to_owned(),
                             },
                         );
                     } else {
@@ -669,7 +889,7 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                             .stderr(Stdio::null())
                             .spawn()?;
                         let mut group = Group {
-                            id,
+                            key,
                             child,
                             control,
                             terminal: None,
@@ -679,6 +899,7 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                             uncertain: false,
                             control_closed: false,
                             stopping: None,
+                            cleanup_timeout,
                         };
                         let launch = (|| -> io::Result<LaunchOutcome> {
                             let mut handoff: Vec<_> = descriptors.iter().map(AsFd::as_fd).collect();
@@ -688,7 +909,7 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                                 &AnchorRequest::Launch {
                                     spec: spec.clone(),
                                     resources: listeners.len(),
-                                    cleanup_timeout_ms: config.cleanup_timeout_ms,
+                                    cleanup_timeout_ms: cleanup_timeout.as_millis() as u64,
                                 },
                                 &handoff,
                             )?;
@@ -728,11 +949,12 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                         match launch {
                             Ok(LaunchOutcome::Granted) => {}
                             Ok(LaunchOutcome::TerminalRejected(error)) => {
-                                admission_failed = true;
-                                emit(
+                                fail_scope(&mut scopes, &group.key, &mut admission_failed);
+                                emit_group(
                                     &mut owner,
                                     &mut owner_alive,
-                                    &CustodyEvent::Fault {
+                                    &group.key,
+                                    GroupEvent::Fault {
                                         reason: format!(
                                             "terminal custody rejected before payload launch: {error}"
                                         ),
@@ -752,10 +974,35 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                         groups.push(group);
                     }
                 }
-                Ok(Some((OwnerRequest::StopGroup { id }, descriptors)))
+                Ok(Some((OwnerRequest::StopGroup { scope, id }, descriptors)))
                     if descriptors.is_empty() =>
                 {
-                    if let Some(group) = groups.iter_mut().find(|group| group.id == id) {
+                    let key = GroupKey { scope, id };
+                    let registered = key
+                        .scope
+                        .as_ref()
+                        .and_then(|id| scopes.iter().find(|scope| &scope.id == id));
+                    let invalid_scope = if key.scope.is_some() {
+                        registered.is_none()
+                    } else {
+                        !scopes.is_empty()
+                    };
+                    let invalid_scope = invalid_scope || key.id.is_empty() || key.id.len() > 128;
+                    if !invalid_scope
+                        && registered.is_some_and(|scope| scope.phase != ScopePhase::Running)
+                    {
+                        emit_group(
+                            &mut owner,
+                            &mut owner_alive,
+                            &key,
+                            GroupEvent::Rejected {
+                                id: key.id.clone(),
+                                reason: "scope admission closed".to_owned(),
+                            },
+                        );
+                    } else if !invalid_scope
+                        && let Some(group) = groups.iter_mut().find(|group| group.key == key)
+                    {
                         stop_group(group);
                     } else {
                         admission_failed = true;
@@ -772,7 +1019,18 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                 Ok(Some((OwnerRequest::Stop, descriptors))) if descriptors.is_empty() => {
                     stopping = true
                 }
-                Ok(None) | Err(_) => owner_alive = false,
+                Ok(None) => owner_alive = false,
+                Err(_) => {
+                    admission_failed = true;
+                    emit(
+                        &mut owner,
+                        &mut owner_alive,
+                        &CustodyEvent::Fault {
+                            reason: "invalid custody control packet".to_owned(),
+                        },
+                    );
+                    owner_alive = false;
+                }
                 _ => {
                     admission_failed = true;
                     stopping = true;
@@ -807,14 +1065,31 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
         if !owner_alive || admission_failed {
             stopping = true;
         }
+        for scope in &mut scopes {
+            if stopping && scope.phase == ScopePhase::Running {
+                scope.phase = ScopePhase::Stopping;
+            }
+        }
         // A terminal child must restore its predecessor before that predecessor's anchor can exit.
         let terminal_parents: Vec<_> = groups
             .iter()
             .filter(|group| !group.done)
-            .filter_map(|group| group.terminal.as_ref().map(|terminal| terminal.previous))
+            .filter_map(|group| group.terminal.as_ref())
+            .filter_map(|terminal| {
+                groups
+                    .iter()
+                    .find(|parent| parent.child.id() as i32 == terminal.previous)
+            })
+            .map(|parent| parent.key.clone())
             .collect();
         for group in &mut groups {
-            if stopping {
+            if stopping
+                || group.key.scope.as_ref().is_some_and(|id| {
+                    scopes
+                        .iter()
+                        .any(|scope| &scope.id == id && scope.phase != ScopePhase::Running)
+                })
+            {
                 stop_group(group);
             }
             if group.done {
@@ -825,11 +1100,12 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                     Ok(Some((AnchorEvent::Started { pid }, descriptors)))
                         if descriptors.is_empty() =>
                     {
-                        emit(
+                        emit_group(
                             &mut owner,
                             &mut owner_alive,
-                            &CustodyEvent::Started {
-                                id: group.id.clone(),
+                            &group.key,
+                            GroupEvent::Started {
+                                id: group.key.id.clone(),
                                 pid,
                                 group: group.child.id() as i32,
                             },
@@ -838,11 +1114,12 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                     Ok(Some((AnchorEvent::Exited { status }, descriptors)))
                         if descriptors.is_empty() =>
                     {
-                        emit(
+                        emit_group(
                             &mut owner,
                             &mut owner_alive,
-                            &CustodyEvent::Exited {
-                                id: group.id.clone(),
+                            &group.key,
+                            GroupEvent::Exited {
+                                id: group.key.id.clone(),
                                 status,
                             },
                         );
@@ -851,23 +1128,25 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                     Ok(Some((AnchorEvent::LaunchFailed, descriptors)))
                         if descriptors.is_empty() =>
                     {
-                        admission_failed = true;
+                        fail_scope(&mut scopes, &group.key, &mut admission_failed);
                         group.stopping.get_or_insert_with(Instant::now);
-                        emit(
+                        emit_group(
                             &mut owner,
                             &mut owner_alive,
-                            &CustodyEvent::Fault {
+                            &group.key,
+                            GroupEvent::Fault {
                                 reason: "payload could not be started".to_owned(),
                             },
                         );
                     }
                     Ok(Some((AnchorEvent::Interrupted, descriptors))) if descriptors.is_empty() => {
-                        admission_failed = true;
+                        fail_scope(&mut scopes, &group.key, &mut admission_failed);
                         group.stopping.get_or_insert_with(Instant::now);
-                        emit(
+                        emit_group(
                             &mut owner,
                             &mut owner_alive,
-                            &CustodyEvent::Fault {
+                            &group.key,
+                            GroupEvent::Fault {
                                 reason: "payload group interrupted".to_owned(),
                             },
                         );
@@ -890,7 +1169,7 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                     }
                 }
             }
-            let restoring_child = terminal_parents.contains(&(group.child.id() as i32));
+            let restoring_child = terminal_parents.contains(&group.key);
             if group.sweep == Sweep::Pending && !restoring_child && !group.uncertain {
                 if send_packet(&mut group.control, &AnchorRequest::SweepAck, &[]).is_err() {
                     uncertain(
@@ -948,11 +1227,12 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                             } else {
                                 group.child.wait()?;
                                 group.done = true;
-                                emit(
+                                emit_group(
                                     &mut owner,
                                     &mut owner_alive,
-                                    &CustodyEvent::Clean {
-                                        id: group.id.clone(),
+                                    &group.key,
+                                    GroupEvent::Clean {
+                                        id: group.key.id.clone(),
                                         forced: group.forced,
                                     },
                                 );
@@ -968,9 +1248,10 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                     }
                 }
             }
-            if group.stopping.is_some_and(|time| {
-                time.elapsed() >= Duration::from_millis(config.cleanup_timeout_ms)
-            }) && !group.done
+            if group
+                .stopping
+                .is_some_and(|time| time.elapsed() >= group.cleanup_timeout)
+                && !group.done
                 && !(group.sweep == Sweep::Pending && restoring_child)
             {
                 uncertain(
@@ -981,11 +1262,34 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                 );
             }
             if group.uncertain {
+                fail_scope(&mut scopes, &group.key, &mut admission_failed);
                 admission_failed = true;
+            }
+        }
+        for scope in &mut scopes {
+            if scope.phase == ScopePhase::Stopping
+                && groups
+                    .iter()
+                    .filter(|group| group.key.scope.as_ref() == Some(&scope.id))
+                    .all(|group| group.done)
+            {
+                scope.phase = ScopePhase::Stopped;
+                emit(
+                    &mut owner,
+                    &mut owner_alive,
+                    &CustodyEvent::ScopeStopped {
+                        scope: scope.id.clone(),
+                        clean: true,
+                    },
+                );
             }
         }
         let state = (
             stopping,
+            scopes
+                .iter()
+                .map(|scope| (scope.phase, scope.failed))
+                .collect::<Vec<_>>(),
             groups
                 .iter()
                 .map(|group| (group.done, group.uncertain, group.sweep))
@@ -995,6 +1299,7 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
             save_state(
                 private_config_path,
                 &groups,
+                &scopes,
                 if groups.iter().any(|group| group.uncertain) {
                     "custody_retained"
                 } else if stopping {
@@ -1007,13 +1312,19 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
         }
         if stopping && groups.iter().all(|group| group.done) {
             drop(listeners);
-            save_state(private_config_path, &groups, "released")?;
+            save_state(private_config_path, &groups, &scopes, "released")?;
             emit(
                 &mut owner,
                 &mut owner_alive,
                 &CustodyEvent::Stopped { clean: true },
             );
-            return Ok(if admission_failed { 1 } else { 0 });
+            return Ok(
+                if admission_failed || scopes.iter().any(|scope| scope.failed) {
+                    1
+                } else {
+                    0
+                },
+            );
         }
         if !owner_alive {
             std::thread::sleep(Duration::from_millis(10));
@@ -1218,9 +1529,9 @@ mod tests {
         fs::create_dir(&directory).unwrap();
         let outcome = (|| -> io::Result<(serde_json::Value, serde_json::Value)> {
             let path = directory.join("custody.json");
-            save_state(&path, &[], "ready")?;
+            save_state(&path, &[], &[], "ready")?;
             let mut reader = File::open(path.with_extension("status.json"))?;
-            save_state(&path, &[], "released")?;
+            save_state(&path, &[], &[], "released")?;
             let mut original = String::new();
             reader.read_to_string(&mut original)?;
             let original = serde_json::from_str(&original).map_err(invalid_data)?;
@@ -1232,6 +1543,15 @@ mod tests {
         let (original, current) = outcome.unwrap();
         assert_eq!(original["status"], "ready");
         assert_eq!(current["status"], "released");
+        assert_eq!(
+            original
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            vec!["custodian_pid", "groups", "status"]
+        );
     }
 
     #[test]
@@ -1432,7 +1752,7 @@ mod tests {
             );
             path
         } else {
-            save_state(&path, &[], "fixture").unwrap();
+            save_state(&path, &[], &[], "fixture").unwrap();
             path.with_extension("status.json")
         };
         assert_eq!(fs::metadata(observed).unwrap().mode() & 0o777, 0o600);

@@ -21,6 +21,24 @@ Use one authoritative native custodian for the entire batch. Document scopes own
 
 The [native custody contract](session-protocol.md#ownership-and-external-resources) and its cooperative-process limits still apply. Sharing a listener does not weaken per-document invocation admission, context comparison, output delivery or no-retry guarantees.
 
+## Native scope primitive
+
+The first implementation stage adds internal custody scopes without a scheduler, host broker or `verify-many` entry point. Existing standalone configuration, events and status snapshot fields retain their shapes. The first successful `register_scope` selects scoped mode before any standalone payload launch; mixing modes is a control fault. The existing configuration's `session_timeout_ms` remains the whole custodian lifetime limit. Each registration supplies positive session and cleanup limits, starts its own session clock, and reserves its scope ID for the rest of the custodian lifetime. Group identity is the typed pair `(scope, id)`; sibling scopes may reuse local names such as `author`.
+
+| Internal request or event | Meaning |
+| --- | --- |
+| `register_scope {scope, session_timeout_ms, cleanup_timeout_ms}` → `scope_registered {scope}` | Admit a fresh document scope under the already-held listener; never bind a second listener |
+| `spawn {scope, id, spec}` / `stop_group {scope, id}` | Address a group within an admitted running scope; descriptors and launch validation retain the standalone contract |
+| `scope_event {scope, event}` | Attribute `started`, `exited`, `clean`, `fault`, `uncertain` and `rejected` events to one scope |
+| `stop_scope {scope}` → `scope_stopped {scope, clean:true}` | Close scope admission, stop its groups and report exactly one cleanup completion after all groups are certified clean; retain the batch exclusion |
+| `scope_event` with `rejected {id, reason:"scope admission closed"}` | Reject a valid late group request for a known stopping/stopped scope without aborting a healthy sibling |
+| `scope_rejected {scope, reason:"scope admission closed"}` | Decline fresh registration after a scoped fault; it creates no scope or reservation |
+| Global `stop` or owner-control loss | Stop every admitted scope and release the listener only after all owned groups certify cleanup |
+
+A scope deadline or known local payload-launch failure is sticky execution failure: it stops that scope and closes new registration while existing healthy scopes can continue. Cleanup completion does not erase the failure, and the custodian eventually exits nonzero. Duplicate registration, unknown scopes or groups in running scopes, mixed modes and malformed control remain global faults. Group uncertainty stops the batch and retains custody; it cannot produce a successful scope or batch cleanup event. Terminal restoration dependencies remain global and use typed group keys, so cleanup in one scope cannot reap a predecessor still needed by another.
+
+Scope deadlines are checked by the custodian event loop before admitting the next received request; the existing whole-custodian deadline remains in that loop. Synchronous native anchor handoffs and control writes can delay observation; these are not independently scheduled real-time timers. The existing terminal dependency and post-acknowledgement cleanup clocks remain intact. The native scope controls exercise attribution, same-name groups, late-request rejection, sibling continuation, exclusion between scopes, global owner loss and uncertain cleanup; they do not qualify document scheduling or consumer parallelism. Seven new scope entries and ten retained custody entries pass locally; the complete Rust suite, formatting and Clippy pass. Independent review corrected output-readiness races and preserved exact standalone snapshot fields, with red/green guards for that shape and malformed-control exit status. Hosted qualification remains pending.
+
 ## Implementation and acceptance tasks
 
 | Task | Required result |
