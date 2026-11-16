@@ -49,7 +49,7 @@ libc = "=0.2.191"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
 time = { version = "=0.3.55", features = ["formatting"] }
-ureq = { version = "=3.5.0", default-features = false, features = ["rustls"] }
+ureq = { version = "=3.5.1", default-features = false, features = ["rustls"] }
 url = "=2.5.8"
 uuid = { version = "=1.29.0", features = ["v4"] }
 
