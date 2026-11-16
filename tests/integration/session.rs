@@ -552,6 +552,148 @@ assert.equal(Buffer.concat(chunks).toString(),'ok');
 }
 
 const JVM_AUTHOR_MARKER: &str = "MDRUN_JVM_AUTHOR_FIXTURE";
+
+fn jvm_shell_binding(fixture: &Fixture, ignore: bool) {
+    let prepared = PathBuf::from(std::env::var_os("MDRUN_JVM_FIXTURE").unwrap());
+    let manifest: Value = serde_json::from_slice(&fs::read(prepared).unwrap()).unwrap();
+    let mut binding = manifest["binding"].clone();
+    binding["artifact_id"] = json!(format!("shell-qualification-{}", uuid::Uuid::new_v4()));
+    binding["context"] = json!({"environment": {
+        "PWD": fixture.0.to_str().unwrap(), "SHLVL": "4", "_": "original-baseline"
+    }});
+    if ignore {
+        binding["warm_ignore_env"] = json!(["SHLVL", "_"]);
+    }
+    fixture.write("binding.json", serde_json::to_vec(&binding).unwrap());
+}
+
+const JVM_SHELL_SCRIPT: &str = r#"set -e
+tool ignore; printf '\n'
+printf 'piped input\n' | tool echo
+/bin/sh -c 'tool ignore; printf "\n"'
+if tool fail; then exit 99; else test "$?" -eq 17; fi
+tool ignore; printf '\n'
+"#;
+const JVM_SHELL_OUTPUT: &[u8] = b"ok\npiped input\nok\nok\n";
+
+#[test]
+#[ignore = "requires independently prepared JVM fixtures selected by MDRUN_JVM_FIXTURE"]
+fn jvm_shell_equivalence_is_opt_in_and_matches_independent_cold() {
+    for (ignore, mode, warm, cold, starts) in [
+        (false, "fast", 0, 5, 1),
+        (true, "fast", 5, 0, 1),
+        (true, "cold", 0, 5, 0),
+    ] {
+        let fixture = Fixture::new();
+        jvm_shell_binding(&fixture, ignore);
+        let options = if ignore && mode == "fast" {
+            vec!["--mode", mode, "--require-warm"]
+        } else {
+            vec!["--mode", mode]
+        };
+        let output = fixture.run(&options, &["/bin/bash", "-c", JVM_SHELL_SCRIPT]);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(output.stdout, JVM_SHELL_OUTPUT);
+        assert!(output.stderr.is_empty());
+        let report = fixture.report();
+        assert_eq!(report["warm_calls"], warm);
+        assert_eq!(report["cold_calls"], cold);
+        assert_eq!(report["worker_starts"], starts);
+        if !ignore {
+            assert_eq!(report["cold_reasons"]["environment"], 5);
+        }
+        assert_eq!(report["application_statuses"][3]["exit_code"], 17);
+        assert_eq!(report["infrastructure_failure"], Value::Null);
+        assert_eq!(report["cleanup"]["outcome"], "clean");
+    }
+}
+
+#[test]
+#[ignore = "requires independently prepared JVM fixtures selected by MDRUN_JVM_FIXTURE"]
+fn jvm_shell_equivalence_verifies_an_unchanged_bash_recording() {
+    let fixture = Fixture::new();
+    jvm_shell_binding(&fixture, true);
+    let document = format!(
+        "# Existing recording\n\n```bash\n{JVM_SHELL_SCRIPT}```\n\n```output\n{}```\n",
+        String::from_utf8_lossy(JVM_SHELL_OUTPUT)
+    );
+    fixture.write("document.md", &document);
+    let mut command = Command::new(env!("CARGO_BIN_EXE_mdrun"));
+    command.current_dir(&fixture.0).args([
+        "verify",
+        "document.md",
+        "--binding",
+        "binding.json",
+        "--require-warm",
+        "--report",
+        "report.json",
+    ]);
+    let output = fixture.capture(command);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        fs::read_to_string(fixture.0.join("document.md")).unwrap(),
+        document
+    );
+    assert_eq!(fixture.report()["warm_calls"], 5);
+    assert_eq!(fixture.report()["cold_calls"], 0);
+    assert_eq!(fixture.report()["worker_starts"], 1);
+}
+
+#[test]
+#[ignore = "requires independently prepared JVM fixtures selected by MDRUN_JVM_FIXTURE"]
+fn jvm_shell_equivalence_keeps_observing_handlers_cold_with_original_values() {
+    for (ignore, reason) in [(false, "environment"), (true, "observes_shell_environment")] {
+        let fixture = Fixture::new();
+        jvm_shell_binding(&fixture, ignore);
+        let output = fixture.run(
+            &[],
+            &[
+                "/usr/bin/env",
+                "SHLVL=77",
+                "_=explicit-value",
+                "tool",
+                "environment",
+            ],
+        );
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(output.stdout, b"77\nexplicit-value\n");
+        assert!(output.stderr.is_empty());
+        let report = fixture.report();
+        assert_eq!(report["warm_calls"], 0);
+        assert_eq!(report["cold_calls"], 1);
+        assert_eq!(report["cold_reasons"][reason], 1);
+        assert_eq!(report["cleanup"]["outcome"], "clean");
+
+        let required = fixture.run(
+            &["--require-warm"],
+            &[
+                "/usr/bin/env",
+                "SHLVL=77",
+                "_=explicit-value",
+                "tool",
+                "environment",
+            ],
+        );
+        assert!(!required.status.success());
+        assert!(required.stdout.is_empty());
+        assert_eq!(fixture.report()["warm_calls"], 0);
+        assert_eq!(fixture.report()["cold_calls"], 0);
+    }
+}
+
 const JVM_CALLS: [&str; 7] = [
     "00-ignore",
     "01-fail",

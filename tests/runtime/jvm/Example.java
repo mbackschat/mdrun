@@ -4,6 +4,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /** Supplies the same application behavior to independent cold and cooperative warm launchers. */
@@ -30,6 +31,11 @@ public final class Example {
             }
             case "read_file" -> {
                 Files.copy(Path.of(argv.get(1)), stdout);
+                yield 0;
+            }
+            case "environment" -> {
+                stdout.write((System.getenv("SHLVL") + "\n" + System.getenv("_") + "\n")
+                        .getBytes(StandardCharsets.UTF_8));
                 yield 0;
             }
             case "fail" -> 17;

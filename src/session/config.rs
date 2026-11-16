@@ -17,6 +17,8 @@ pub struct Binding {
     #[serde(default)]
     pub cold_if_env_nonempty: Vec<String>,
     #[serde(default)]
+    pub warm_ignore_env: Vec<String>,
+    #[serde(default)]
     pub resources: Vec<Resource>,
     #[serde(default = "startup_timeout")]
     pub startup_timeout_ms: u64,
@@ -116,6 +118,12 @@ impl Binding {
         }
         for name in &self.cold_if_env_nonempty {
             validate_environment_name(name)?;
+        }
+        let mut ignored = HashSet::new();
+        for name in &self.warm_ignore_env {
+            if !matches!(name.as_str(), "SHLVL" | "_") || !ignored.insert(name) {
+                return Err("warm_ignore_env supports only distinct SHLVL and _ names".to_string());
+            }
         }
         let mut endpoints = HashSet::new();
         for resource in &self.resources {
@@ -264,7 +272,49 @@ mod tests {
         assert_eq!(binding.cleanup_timeout_ms, 6_000);
         assert!(binding.resources.is_empty());
         assert!(binding.cold_if_env_nonempty.is_empty());
+        assert_eq!(
+            serde_json::to_value(&binding).unwrap()["warm_ignore_env"],
+            json!([])
+        );
         assert!(binding.context.is_none());
+    }
+
+    #[test]
+    fn warm_environment_projection_accepts_only_distinct_explicit_shell_keys() {
+        for names in [
+            json!([]),
+            json!(["SHLVL"]),
+            json!(["_"]),
+            json!(["SHLVL", "_"]),
+            json!(["_", "SHLVL"]),
+        ] {
+            let mut json = binding_json();
+            json["warm_ignore_env"] = names.clone();
+            let binding = validate(json).unwrap();
+            assert_eq!(
+                serde_json::to_value(binding).unwrap()["warm_ignore_env"],
+                names
+            );
+        }
+        for names in [
+            json!(["SHLVL", "SHLVL"]),
+            json!(["_", "_"]),
+            json!(["SHLVL", "_", "SHLVL"]),
+            json!(["PATH"]),
+            json!(["PWD"]),
+            json!(["VALUE"]),
+            json!(["MDRUN_SESSION"]),
+            json!(["shlvl"]),
+            json!(["SHLVL "]),
+            json!([""]),
+            json!([1]),
+            json!("SHLVL"),
+            Value::Null,
+        ] {
+            let mut json = binding_json();
+            json["warm_ignore_env"] = names;
+            assert!(validate(json).is_err(), "accepted warm projection names");
+        }
     }
 
     #[test]

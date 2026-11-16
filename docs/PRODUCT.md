@@ -32,7 +32,7 @@ Fast execution is the ordinary development route for qualified cooperative bindi
 | --- | --- |
 | Binding | Prepared worker argv, absolute cold launcher and immutable artifact identity supplied externally; fixed startup context captured by the host or explicitly configured |
 | Admission | Side-effect-free classification before acceptance; no stdin consumption during classification; no retry after acceptance |
-| Context | Unsupported cwd/PWD, environment, umask, terminal, encoding or startup-option differences select cold before execution |
+| Context | Unsupported cwd/PWD, environment, umask, terminal, encoding or startup-option differences select cold before execution; experimental bindings may explicitly declare qualified `SHLVL`/`_` irrelevance for warm comparison only |
 | Streams | Lazy input, streamed binary output, bounded backpressure and descriptor fidelity; frame bounds are not total-input bounds |
 | Sequential reuse | Invocation ownership extends through output flush and client acknowledgement, including cold calls |
 | Failures | Application status is distinct from infrastructure/cleanup status; masked transport failures still fail the session |

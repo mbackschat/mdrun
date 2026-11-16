@@ -58,6 +58,9 @@ public final class Fixture implements Application {
 
     @Override
     public Classification classify(List<String> argv) {
+        if (!argv.isEmpty() && argv.getFirst().equals("environment")) {
+            return new Classification.Refused("observes_shell_environment");
+        }
         return !argv.isEmpty() && argv.getFirst().equals("refuse")
             ? new Classification.Refused("unsupported_command") : new Classification.Eligible();
     }

@@ -152,11 +152,23 @@ impl NativeContext {
         let actual: BTreeMap<_, _> = self
             .environment
             .iter()
+            .filter(|(key, _)| {
+                !binding
+                    .warm_ignore_env
+                    .iter()
+                    .any(|name| key == name.as_str())
+            })
             .map(|(key, value)| (key, value))
             .collect();
         let expected: BTreeMap<_, _> = baseline
             .environment
             .iter()
+            .filter(|(key, _)| {
+                !binding
+                    .warm_ignore_env
+                    .iter()
+                    .any(|name| key == name.as_str())
+            })
             .map(|(key, value)| (key, value))
             .collect();
         if actual != expected {
@@ -193,6 +205,186 @@ mod tests {
             stdin: false,
             stdout: false,
             stderr: false,
+        }
+    }
+
+    fn binding_ignoring(names: &[&str]) -> Binding {
+        let mut json = serde_json::to_value(binding()).unwrap();
+        json["warm_ignore_env"] = serde_json::json!(names);
+        serde_json::from_value(json).unwrap()
+    }
+
+    fn set_environment(context: &mut NativeContext, key: &str, value: Option<OsString>) {
+        context.environment.retain(|(name, _)| name != key);
+        if let Some(value) = value {
+            context.environment.push((key.into(), value));
+        }
+    }
+
+    #[test]
+    fn default_environment_comparison_rejects_changed_missing_and_new_keys() {
+        for key in ["SHLVL", "_", "VALUE", "PWD", "PATH", "UNRELATED"] {
+            for (before, after) in [
+                (Some("before"), Some("after")),
+                (Some("before"), None),
+                (None, Some("after")),
+            ] {
+                let mut original = context();
+                set_environment(&mut original, key, before.map(OsString::from));
+                let mut actual = original.clone();
+                set_environment(&mut actual, key, after.map(OsString::from));
+                assert_eq!(
+                    actual.cold_reason(&original, &binding(), &[], terminal()),
+                    Some("environment"),
+                    "default comparison accepted {key}: {before:?} -> {after:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn explicit_shell_projection_ignores_values_and_presence_only_for_declared_names() {
+        for names in [&["SHLVL"][..], &["_"][..], &["SHLVL", "_"][..]] {
+            let binding = binding_ignoring(names);
+            for key in names {
+                for (before, after) in [
+                    (Some("before"), Some("after")),
+                    (Some("before"), None),
+                    (None, Some("after")),
+                    (None, Some("")),
+                ] {
+                    let mut original = context();
+                    set_environment(&mut original, key, before.map(OsString::from));
+                    let mut actual = original.clone();
+                    set_environment(&mut actual, key, after.map(OsString::from));
+                    let original_bytes = serde_json::to_vec(&original).unwrap();
+                    let actual_bytes = serde_json::to_vec(&actual).unwrap();
+                    assert_eq!(
+                        actual.cold_reason(&original, &binding, &[], terminal()),
+                        None,
+                        "explicit projection rejected {key}: {before:?} -> {after:?}"
+                    );
+                    assert_eq!(serde_json::to_vec(&original).unwrap(), original_bytes);
+                    assert_eq!(serde_json::to_vec(&actual).unwrap(), actual_bytes);
+                }
+            }
+        }
+        for (ignored, compared) in [("SHLVL", "_"), ("_", "SHLVL")] {
+            let original = context();
+            let mut actual = original.clone();
+            set_environment(&mut actual, compared, Some("changed".into()));
+            assert_eq!(
+                actual.cold_reason(&original, &binding_ignoring(&[ignored]), &[], terminal()),
+                Some("environment")
+            );
+        }
+    }
+
+    #[test]
+    fn shell_projection_keeps_unrelated_context_and_native_encoding_checks() {
+        let original = context();
+        let binding = binding_ignoring(&["SHLVL", "_"]);
+        let mut shell_changed = original.clone();
+        set_environment(&mut shell_changed, "SHLVL", Some("2".into()));
+        set_environment(&mut shell_changed, "_", Some("/shell/command".into()));
+        for key in ["VALUE", "PWD", "PATH", "UNRELATED"] {
+            let mut actual = shell_changed.clone();
+            set_environment(&mut actual, key, Some("changed".into()));
+            let preserved = serde_json::to_vec(&actual).unwrap();
+            assert_eq!(
+                actual.cold_reason(&original, &binding, &[], terminal()),
+                Some("environment"),
+                "projection discarded unrelated {key}"
+            );
+            assert_eq!(serde_json::to_vec(&actual).unwrap(), preserved);
+            assert_eq!(
+                actual.environment_value(OsStr::new("SHLVL")),
+                Some(OsStr::new("2"))
+            );
+            assert_eq!(
+                actual.environment_value(OsStr::new("_")),
+                Some(OsStr::new("/shell/command"))
+            );
+        }
+        let mut actual = shell_changed.clone();
+        actual.cwd = "/different".into();
+        assert_eq!(
+            actual.cold_reason(&original, &binding, &[], terminal()),
+            Some("cwd")
+        );
+        let mut actual = shell_changed.clone();
+        actual.umask = 0o077;
+        assert_eq!(
+            actual.cold_reason(&original, &binding, &[], terminal()),
+            Some("umask")
+        );
+        for terminal in [
+            Terminal {
+                stdin: true,
+                ..terminal()
+            },
+            Terminal {
+                stdout: true,
+                ..terminal()
+            },
+            Terminal {
+                stderr: true,
+                ..terminal()
+            },
+        ] {
+            assert_eq!(
+                shell_changed.cold_reason(&original, &binding, &[], terminal),
+                Some("terminal")
+            );
+        }
+        for key in ["SHLVL", "_", "VALUE"] {
+            let mut actual = shell_changed.clone();
+            set_environment(&mut actual, key, Some(OsString::from_vec(vec![0xff])));
+            assert_eq!(
+                actual.cold_reason(&original, &binding, &[], terminal()),
+                Some("native_encoding"),
+                "projection hid native bytes in {key}"
+            );
+        }
+        let mut actual = shell_changed.clone();
+        actual
+            .environment
+            .push((OsString::from_vec(vec![0xff]), "native key".into()));
+        assert_eq!(
+            actual.cold_reason(&original, &binding, &[], terminal()),
+            Some("native_encoding")
+        );
+        let mut actual = shell_changed.clone();
+        actual.cwd = OsString::from_vec(b"/directory-\xff".to_vec()).into();
+        assert_eq!(
+            actual.cold_reason(&original, &binding, &[], terminal()),
+            Some("native_encoding")
+        );
+        assert_eq!(
+            shell_changed.cold_reason(
+                &original,
+                &binding,
+                &[OsString::from_vec(vec![0xff])],
+                terminal()
+            ),
+            Some("native_encoding")
+        );
+    }
+
+    #[test]
+    fn shell_projection_does_not_override_startup_option_policy() {
+        let original = context();
+        for key in ["STARTUP_OPTIONS", "SHLVL", "_"] {
+            let mut json = serde_json::to_value(binding_ignoring(&["SHLVL", "_"])).unwrap();
+            json["cold_if_env_nonempty"] = serde_json::json!([key]);
+            let binding: Binding = serde_json::from_value(json).unwrap();
+            let mut actual = original.clone();
+            set_environment(&mut actual, key, Some("-options".into()));
+            assert_eq!(
+                actual.cold_reason(&original, &binding, &[], terminal()),
+                Some("startup_options"),
+                "projection overrode startup policy for {key}"
+            );
         }
     }
 
