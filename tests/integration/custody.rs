@@ -409,11 +409,19 @@ fn terminate_children(
     Ok(())
 }
 
-fn available_address() -> SocketAddr {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
+#[test]
+fn selected_listener_endpoint_stays_reserved_until_custodian_handoff() {
+    let directory = Directory::new();
+    let reservation = super::ports::Reservation::new();
+    let address = reservation.address();
+    assert!(
+        excluded(address),
+        "selected endpoint became available before handoff"
+    );
+    let mut controller = Controller::start(&directory.0, reservation, 30000);
+    assert!(excluded(address));
+    controller.finish();
+    assert!(!excluded(address));
 }
 fn excluded(address: SocketAddr) -> bool {
     match TcpListener::bind(address) {
@@ -463,7 +471,15 @@ impl Controller {
         Ok(())
     }
 
-    fn start(directory: &Path, address: SocketAddr, session_timeout_ms: u64) -> Self {
+    fn start(
+        directory: &Path,
+        reservation: super::ports::Reservation,
+        session_timeout_ms: u64,
+    ) -> Self {
+        reservation.handoff(|address| Self::start_at(directory, address, session_timeout_ms))
+    }
+
+    fn start_at(directory: &Path, address: SocketAddr, session_timeout_ms: u64) -> Self {
         ordinary_child_disposition().unwrap();
         let path = directory.join("custody.json");
         let mut file = fs::OpenOptions::new()
@@ -648,8 +664,8 @@ fn failed_stop_observation_resumes_the_directly_owned_child() {
 #[test]
 fn cleanup_authority_rejects_an_unrelated_owned_child() {
     let directory = Directory::new();
-    let address = available_address();
-    let mut controller = Controller::start(&directory.0, address, 30000);
+    let reservation = super::ports::Reservation::new();
+    let mut controller = Controller::start(&directory.0, reservation, 30000);
     let mut sibling = OwnedLeaf(
         Command::new("/bin/sleep")
             .arg("15")
@@ -668,8 +684,9 @@ fn cleanup_authority_rejects_an_unrelated_owned_child() {
 #[test]
 fn exact_merged_descriptors_and_direct_status_precede_observed_release() {
     let directory = Directory::new();
-    let address = available_address();
-    let mut controller = Controller::start(&directory.0, address, 30000);
+    let reservation = super::ports::Reservation::new();
+    let address = reservation.address();
+    let mut controller = Controller::start(&directory.0, reservation, 30000);
     let output = File::create(directory.0.join("output")).unwrap();
     controller.launch("printf stdout; printf stderr >&2", &output);
     assert_eq!(
@@ -693,8 +710,9 @@ fn exact_merged_descriptors_and_direct_status_precede_observed_release() {
 fn unexpected_anchor_loss_retains_exclusion_and_reports_uncertainty() {
     use std::os::unix::ffi::OsStrExt;
     let directory = Directory::new();
-    let address = available_address();
-    let mut controller = Controller::start(&directory.0, address, 30000);
+    let reservation = super::ports::Reservation::new();
+    let address = reservation.address();
+    let mut controller = Controller::start(&directory.0, reservation, 30000);
     let output = File::create(directory.0.join("output")).unwrap();
     let executable = std::env::current_exe().unwrap();
     let mut launch = spec("");
@@ -748,8 +766,9 @@ fn cooperative_payload_fixture() {
 #[test]
 fn watchdog_failure_is_distinct_from_successful_cleanup() {
     let directory = Directory::new();
-    let address = available_address();
-    let mut controller = Controller::start(&directory.0, address, 200);
+    let reservation = super::ports::Reservation::new();
+    let address = reservation.address();
+    let mut controller = Controller::start(&directory.0, reservation, 200);
     assert_eq!(
         controller.receive(),
         json!({"kind":"fault","reason":"session deadline expired"})
@@ -762,8 +781,9 @@ fn watchdog_failure_is_distinct_from_successful_cleanup() {
 #[test]
 fn invalid_group_control_cannot_be_reported_as_success() {
     let directory = Directory::new();
-    let address = available_address();
-    let mut controller = Controller::start(&directory.0, address, 30000);
+    let reservation = super::ports::Reservation::new();
+    let address = reservation.address();
+    let mut controller = Controller::start(&directory.0, reservation, 30000);
     controller.send(json!({"kind":"stop_group","id":"unknown"}), &[]);
     assert_eq!(
         controller.receive(),
@@ -834,8 +854,9 @@ fn interruption_before_the_payload_grant_executes_nothing() {
 #[test]
 fn a_failed_payload_spawn_releases_custody_after_observing_the_empty_group() {
     let directory = Directory::new();
-    let address = available_address();
-    let mut controller = Controller::start(&directory.0, address, 30000);
+    let reservation = super::ports::Reservation::new();
+    let address = reservation.address();
+    let mut controller = Controller::start(&directory.0, reservation, 30000);
     let descriptor = File::open("/dev/null").unwrap();
     let mut launch = spec("");
     launch["argv"] = json!([os(format!("/mdrun-missing-{}", uuid::Uuid::new_v4()))]);

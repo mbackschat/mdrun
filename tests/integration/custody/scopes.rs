@@ -37,8 +37,13 @@ fn drain_scope(controller: &mut Controller, scope: &str) -> Vec<Value> {
         assert_eq!(
             events.last().unwrap()["scope"],
             scope,
-            "unexpected sibling event; history: {events:#?}; custody snapshot: {:?}",
-            fs::read_to_string(controller.directory.join("custody.status.json"))
+            "unexpected sibling event; history: {events:#?}; custody snapshot: {:?}; payload snapshots: {:?}",
+            fs::read_to_string(controller.directory.join("custody.status.json")),
+            controller
+                .payloads
+                .iter()
+                .map(|process| (process, observe(process.pid)))
+                .collect::<Vec<_>>()
         );
         if stopped {
             return events;
@@ -71,8 +76,9 @@ fn finish(controller: &mut Controller, success: bool) {
 #[test]
 fn scoped_groups_reuse_names_and_keep_one_lease_across_completed_scopes() {
     let directory = Directory::new();
-    let address = available_address();
-    let mut controller = Controller::start(&directory.0, address, 30000);
+    let reservation = super::super::ports::Reservation::new();
+    let address = reservation.address();
+    let mut controller = Controller::start(&directory.0, reservation, 30000);
     register(&mut controller, "first", 20000);
     register(&mut controller, "second", 20000);
     let first = launch(
@@ -88,7 +94,13 @@ fn scoped_groups_reuse_names_and_keep_one_lease_across_completed_scopes() {
         "printf second; exec /bin/sleep 15",
     );
     assert_ne!(first["group"], second["group"]);
+    let first_payload = Process::record(first["pid"].as_i64().unwrap() as i32);
     let sibling = Process::record(second["pid"].as_i64().unwrap() as i32);
+    assert_eq!(first_payload.group, first["group"].as_i64().unwrap() as i32);
+    assert_eq!(sibling.group, second["group"].as_i64().unwrap() as i32);
+    assert_eq!(first_payload.parent, first_payload.group);
+    assert_eq!(sibling.parent, sibling.group);
+    eprintln!("scope payloads before stop: {first_payload:?}; {sibling:?}");
     wait_until(|| {
         fs::read(directory.0.join("first-author.output")).is_ok_and(|bytes| bytes == b"first")
             && fs::read(directory.0.join("second-author.output"))
@@ -145,8 +157,9 @@ fn scoped_groups_reuse_names_and_keep_one_lease_across_completed_scopes() {
 #[test]
 fn expired_scope_rejects_late_requests_without_aborting_a_running_sibling() {
     let directory = Directory::new();
-    let address = available_address();
-    let mut controller = Controller::start(&directory.0, address, 30000);
+    let reservation = super::super::ports::Reservation::new();
+    let address = reservation.address();
+    let mut controller = Controller::start(&directory.0, reservation, 30000);
     register(&mut controller, "healthy", 20000);
     let healthy = launch(&mut controller, "healthy", "author", "exec /bin/sleep 15");
     register(&mut controller, "short", 200);
@@ -197,8 +210,9 @@ fn expired_scope_rejects_late_requests_without_aborting_a_running_sibling() {
 #[test]
 fn owner_control_loss_sweeps_all_scopes_before_releasing_the_shared_listener() {
     let directory = Directory::new();
-    let address = available_address();
-    let mut controller = Controller::start(&directory.0, address, 30000);
+    let reservation = super::super::ports::Reservation::new();
+    let address = reservation.address();
+    let mut controller = Controller::start(&directory.0, reservation, 30000);
     register(&mut controller, "first", 20000);
     register(&mut controller, "second", 20000);
     let first = launch(&mut controller, "first", "author", "exec /bin/sleep 15");
@@ -237,8 +251,9 @@ fn owner_control_loss_sweeps_all_scopes_before_releasing_the_shared_listener() {
 #[test]
 fn scoped_launch_failure_is_sticky_but_a_healthy_sibling_can_finish() {
     let directory = Directory::new();
-    let address = available_address();
-    let mut controller = Controller::start(&directory.0, address, 30000);
+    let reservation = super::super::ports::Reservation::new();
+    let address = reservation.address();
+    let mut controller = Controller::start(&directory.0, reservation, 30000);
     register(&mut controller, "failed", 20000);
     register(&mut controller, "healthy", 20000);
     let healthy = launch(&mut controller, "healthy", "author", "exec /bin/sleep 15");
@@ -273,8 +288,9 @@ fn scoped_launch_failure_is_sticky_but_a_healthy_sibling_can_finish() {
 fn malformed_owner_packet_fails_while_clean_eof_releases_empty_custody() {
     for malformed in [true, false] {
         let directory = Directory::new();
-        let address = available_address();
-        let mut controller = Controller::start(&directory.0, address, 30000);
+        let reservation = super::super::ports::Reservation::new();
+        let address = reservation.address();
+        let mut controller = Controller::start(&directory.0, reservation, 30000);
         if malformed {
             controller.send(json!({"kind":"spawn","id":"never-launched"}), &[]);
             assert_eq!(
@@ -309,8 +325,9 @@ fn invalid_scope_control_stops_the_batch_without_starting_a_payload() {
         "duplicate_after_stop",
     ] {
         let directory = Directory::new();
-        let address = available_address();
-        let mut controller = Controller::start(&directory.0, address, 30000);
+        let reservation = super::super::ports::Reservation::new();
+        let address = reservation.address();
+        let mut controller = Controller::start(&directory.0, reservation, 30000);
         register(&mut controller, "document", 20000);
         if case == "duplicate_after_stop" {
             stop_scope(&mut controller, "document");
@@ -356,8 +373,9 @@ fn invalid_scope_control_stops_the_batch_without_starting_a_payload() {
 fn scoped_anchor_uncertainty_keeps_the_batch_excluded_without_clean_completion() {
     use std::os::unix::ffi::OsStrExt;
     let directory = Directory::new();
-    let address = available_address();
-    let mut controller = Controller::start(&directory.0, address, 30000);
+    let reservation = super::super::ports::Reservation::new();
+    let address = reservation.address();
+    let mut controller = Controller::start(&directory.0, reservation, 30000);
     register(&mut controller, "failed", 20000);
     register(&mut controller, "sibling", 20000);
     let executable = std::env::current_exe().unwrap();

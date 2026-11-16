@@ -315,19 +315,19 @@ fn payload_fixture() {
 
 #[test]
 fn host_sigkill_retains_declared_listener_until_cold_descendant_cleanup() {
-    let address = TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap();
+    let mut reservation = super::ports::Reservation::new();
+    let address = reservation.address();
     let control_directory =
         std::env::temp_dir().join(format!("mdrun-owner-loss-control-{}", uuid::Uuid::new_v4()));
     fs::create_dir(&control_directory).unwrap();
     let mut command = fixture_command("direct_owner", &control_directory);
     command.env("MDRUN_OWNER_LOSS_ADDRESS", address.to_string());
+    reservation.release_listener();
     let mut control = Run::spawn(control_directory, &mut command);
     wait_until("direct-owner readiness", || {
         control.directory.join("payload.json").exists()
     });
+    drop(reservation);
     let uncontrolled = read_process(&control.directory, "descendant.json");
     assert!(excluded(address));
     control.kill_owner();
@@ -343,6 +343,9 @@ fn host_sigkill_retains_declared_listener_until_cold_descendant_cleanup() {
     fs::write(control.directory.join("finished"), b"").unwrap();
     wait_until("negative-control descendant exit", || !uncontrolled.alive());
     drop(control);
+
+    let mut reservation = super::ports::Reservation::new();
+    let address = reservation.address();
 
     let directory =
         std::env::temp_dir().join(format!("mdrun-owner-loss-managed-{}", uuid::Uuid::new_v4()));
@@ -378,6 +381,7 @@ fn host_sigkill_retains_declared_listener_until_cold_descendant_cleanup() {
             "printf '%s\\n' \"$MDRUN_SESSION\" > client-path; tool & client=$!; wait \"$client\"",
         ])
         .current_dir(&directory);
+    reservation.release_listener();
     let mut managed = Run::spawn(directory, &mut command);
     wait_until("author session configuration", || {
         fs::read_to_string(managed.directory.join("client-path"))
@@ -386,6 +390,7 @@ fn host_sigkill_retains_declared_listener_until_cold_descendant_cleanup() {
                 Path::new(path.trim()).is_absolute() && Path::new(path.trim()).is_file()
             })
     });
+    drop(reservation);
     let client_path = PathBuf::from(
         fs::read_to_string(managed.directory.join("client-path"))
             .unwrap()

@@ -1,7 +1,6 @@
 use super::session_owner_loss::{Run, excluded, observe, read_json, wait_until, write_json};
 use serde_json::json;
 use std::fs;
-use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -94,10 +93,8 @@ fn author_sigkill_fails_session_and_retains_listener_until_warm_descendant_clean
 }
 
 fn check_loss(loss: Loss) {
-    let address = TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap();
+    let mut reservation = super::ports::Reservation::new();
+    let address = reservation.address();
     let directory =
         std::env::temp_dir().join(format!("mdrun-warm-owner-control-{}", uuid::Uuid::new_v4()));
     fs::create_dir(&directory).unwrap();
@@ -106,10 +103,12 @@ fn check_loss(loss: Loss) {
         "MDRUN_OWNER_LOSS_ADDRESS",
         json!({"host":"127.0.0.1","port":address.port()}).to_string(),
     );
+    reservation.release_listener();
     let mut control = Run::spawn(directory, &mut command);
     wait_until("direct Node owner readiness", || {
         control.directory.join("ready.json").exists()
     });
+    drop(reservation);
     let ready = read_json(&control.directory.join("ready.json"));
     let uncontrolled = observe(ready["descendant"].as_i64().unwrap() as i32)
         .unwrap()
@@ -130,6 +129,9 @@ fn check_loss(loss: Loss) {
     fs::write(control.directory.join("finished"), b"").unwrap();
     wait_until("negative-control descendant exit", || !uncontrolled.alive());
     drop(control);
+
+    let mut reservation = super::ports::Reservation::new();
+    let address = reservation.address();
 
     let directory =
         std::env::temp_dir().join(format!("mdrun-warm-owner-managed-{}", uuid::Uuid::new_v4()));
@@ -167,6 +169,7 @@ fn check_loss(loss: Loss) {
             "--test-threads=1",
         ])
         .current_dir(&directory);
+    reservation.release_listener();
     let mut managed = Run::spawn(directory, &mut command);
     wait_until("native author configuration", || {
         assert!(
@@ -176,6 +179,7 @@ fn check_loss(loss: Loss) {
         );
         managed.directory.join("client-path").exists()
     });
+    drop(reservation);
     let client = PathBuf::from(fs::read_to_string(managed.directory.join("client-path")).unwrap());
     assert!(client.is_absolute() && client.is_file());
     managed.private = Some(client.parent().unwrap().to_owned());

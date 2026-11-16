@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -109,7 +109,7 @@ struct HeldResponse {
 
 impl HeldResponse {
     fn new() -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let listener = super::ports::listener();
         let address = listener.local_addr().unwrap();
         let (release, released) = mpsc::channel();
         let capture = thread::spawn(move || {
@@ -184,9 +184,9 @@ impl Drop for HeldResponse {
 
 #[test]
 fn connection_refusal_warns_without_discarding_local_effects_or_command_status() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
+    let mut reservation = super::ports::Reservation::new();
+    let address = reservation.address();
+    reservation.release_listener();
     let error = TcpStream::connect_timeout(&address, Duration::from_secs(1)).unwrap_err();
     assert_eq!(error.kind(), std::io::ErrorKind::ConnectionRefused);
     let remote = format!("http://{address}/refused");
