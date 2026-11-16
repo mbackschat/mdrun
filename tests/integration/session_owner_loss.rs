@@ -133,7 +133,10 @@ impl Run {
             .stdout(stdout)
             .stderr(stderr)
             .spawn()
-            .unwrap();
+            .unwrap_or_else(|error| {
+                let _ = fs::remove_dir_all(&directory);
+                panic!("cannot start custody fixture: {error}");
+            });
         Self {
             directory,
             child,
@@ -178,6 +181,34 @@ impl Drop for Run {
         }
         let _ = fs::remove_dir_all(&self.directory);
     }
+}
+
+#[test]
+fn failed_fixture_startup_does_not_leave_its_owned_directory() {
+    let mut leftovers = Vec::new();
+    for executable_is_directory in [false, true] {
+        let directory =
+            std::env::temp_dir().join(format!("mdrun-failed-start-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&directory).unwrap();
+        let executable = if executable_is_directory {
+            directory.clone()
+        } else {
+            directory.join("missing")
+        };
+        let mut command = Command::new(executable);
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| Run::spawn(
+                directory.clone(),
+                &mut command
+            )))
+            .is_err()
+        );
+        leftovers.push(directory.exists());
+        if directory.exists() {
+            fs::remove_dir_all(directory).unwrap();
+        }
+    }
+    assert_eq!(leftovers, [false, false]);
 }
 
 fn fixture_command(role: &str, directory: &Path) -> Command {
