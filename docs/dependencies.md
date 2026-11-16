@@ -19,3 +19,7 @@ Publication dates were checked against crates.io on 2026-11-16. The manifest pin
 Session work promoted already-locked `base64`, `libc` and `serde` versions to direct dependencies and enabled Serde's existing derive package. The complete graph was rechecked before compilation with zero age, prerelease or yanked-version violations; no registry package version changed in that promotion.
 
 Release qualification measures the final host footprint and audits transitive licenses. “Standalone” means no external Rust/Go/Python/Node/JVM installation is needed for the host, not that it contains no compiled libraries. Showboat is built with Go only for differential qualification; Python scripts are development/test tooling.
+
+## JVM SDK candidate
+
+The dated upstream advisory review found no listed affected range including `2.22.4`; this is not assurance against unknown issues. The preceding `2.22.3` release fixes [error-token growth](https://github.com/FasterXML/jackson-core/security/advisories/GHSA-7hhh-6rmp-j9qf) and [number-regex denial of service](https://github.com/FasterXML/jackson-core/security/advisories/GHSA-p6pp-m3f8-5c89). SDK framing must independently enforce its byte limit, decode UTF-8 strictly before parsing and check canonical bounded Base64 rather than relying on parser convenience methods for these guarantees.
