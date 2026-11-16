@@ -362,7 +362,9 @@ def job(args):
                    "--report", str(args.directory / "report.json"), "--"]
         if args.case == "background_group":
             child = shlex.join(invocation(args, "background"))
-            command.extend(["/bin/sh", "-m", "-c", child + " & while [ ! -f background.json ]; do /bin/sleep 0.01; done; exit 0"])
+            # macOS Bash 3.2.57 disables startup -m here; the 2026-11-16 execution-plan probe records $-.
+            monitor = 'set -m; printf \'{"flags":"%s","pid":%s}\\n\' "$-" "$$" > shell.json; '
+            command.extend(["/bin/bash", "-c", monitor + child + " & while [ ! -f background.json ]; do /bin/sleep 0.01; done; exit 0"])
         else:
             command.extend(invocation(args, "author"))
     if args.case == "no_grant":
@@ -656,6 +658,7 @@ def check(case, result):
         assert "author.json" not in files and "payload.json" not in files, result
         assert state["status"] != 0, result
     elif case == "background_group":
+        assert "m" in files["shell.json"]["flags"], "shell job control was not enabled"
         background = files["background.json"]
         assert background["group"] != background["parent_group"], result
         observation = state["background_observation"]
