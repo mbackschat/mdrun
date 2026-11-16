@@ -1,6 +1,6 @@
 # Distribution and releases
 
-Status: non-publishing qualification passes for the frozen 0.1.0 candidate at `f643259`, 2026-11-16. The owner selected public GitHub hosting, MIT licensing, Homebrew and Linux packages, and requested a stop before publication. No product version has been released. Native archives, Linux package installations and SDK consumption are qualified; public downloads and actual Homebrew installation remain held.
+Status: non-publishing qualification passes for the frozen 0.1.0 candidate at `bbe19d9`, 2026-11-16. The owner selected public GitHub hosting, MIT licensing, Homebrew and Linux packages, and requested a stop before publication. No product version has been released. Native archives, Linux package installations and SDK consumption are qualified; public downloads and actual Homebrew installation remain held.
 
 ## Targets and artifacts
 
@@ -12,7 +12,7 @@ Status: non-publishing qualification passes for the frozen 0.1.0 candidate at `f
 
 The initial supported platform baseline is Apple Silicon with macOS 15 or later, and x86_64/ARM64 Linux with Debian 13 or Fedora 43 packages. Ubuntu 24.04 is the native Linux qualification/build host. Older operating systems are outside the qualified matrix. Intel macOS and Windows have no release artifact in this matrix. Linux packages declare no separately installed application runtime: their packaged binary passes the static-linkage gate. The macOS executable uses system libraries.
 
-The successful runtime jobs at [`f643259`](https://github.com/mbackschat/mdrun/actions/runs/43874321121) on 2026-11-16 observed the following versions. These are concrete tested combinations, not a claim that arbitrary later runtimes or application adapters inherit qualification. The same run passes installed-package and SDK archive/wheel checks, as recorded below and in the [execution checklist](plans/execution.md).
+The earlier successful runtime jobs at [`f643259`](https://github.com/mbackschat/mdrun/actions/runs/43874321121) on 2026-11-16 observed the following versions. These are concrete tested combinations, not a claim that arbitrary later runtimes or application adapters inherit qualification. Current candidate source and artifact evidence is recorded below and in the [execution checklist](plans/execution.md).
 
 | Native qualification host | JVM | Node | Python |
 | --- | --- | --- | --- |
@@ -24,17 +24,19 @@ The successful runtime jobs at [`f643259`](https://github.com/mbackschat/mdrun/a
 
 ## Candidate artifact sizes
 
-All eleven non-publishing jobs in [run 43874321121](https://github.com/mbackschat/mdrun/actions/runs/43874321121) pass for source `f643259f9ddbed1936c1600ccdcfe14dd4f68d3b` with Rust 1.98.1. GitHub's initial macOS ARM capacity failure ran no macOS steps; one same-source retry succeeded while retaining successful Linux jobs. The assembled `release-assets` Actions artifact contains seventeen files. All fifteen `SHA256SUMS` entries, three build identities, attribution hashes and formula contents were independently verified. Each native archive preserves the license, notices and all thirteen maintained man pages. These remain CI artifacts awaiting publication; later documentation edits do not change their recorded source identity.
+All three native builds, SDK consumption and asset assembly in [non-publishing run 43896063039](https://github.com/mbackschat/mdrun/actions/runs/43896063039) pass for source `bbe19d93a4d73ed96cd5d62f901fe05ec285f10b` with Rust 1.98.1. All three native runtime and Showboat differential suites also pass for that exact revision in [source CI 43896061768](https://github.com/mbackschat/mdrun/actions/runs/43896061768). The assembled `release-assets` Actions artifact contains seventeen files. All fifteen `SHA256SUMS` entries, three build identities, attribution hashes and formula contents were independently verified. Each native archive preserves the license, notices and all thirteen maintained man pages. These remain CI artifacts awaiting publication; later documentation edits do not change their recorded source identity.
 
 | Target | Stripped executable bytes | Compressed native archive bytes | Unpacked regular-file bytes |
 | --- | ---: | ---: | ---: |
-| macOS arm64 | 4,201,840 | 2,535,380 | 22,602,683 |
-| Linux x86_64 | 4,973,488 | 2,778,871 | 23,374,331 |
-| Linux arm64 | 4,329,864 | 2,626,799 | 22,730,707 |
+| macOS arm64 | 4,201,904 | 2,537,750 | 22,603,197 |
+| Linux x86_64 | 4,998,064 | 2,788,530 | 23,399,357 |
+| Linux arm64 | 4,329,864 | 2,639,037 | 22,731,157 |
+
+The artifact workflow's overall conclusion is `cancelled`: after the successful artifact and runtime jobs, its duplicate macOS differential was still waiting for a runner and was cancelled. That exact-revision differential passed in source CI. This does not bypass the complete workflow required for a future release tag.
 
 Use **8 MiB per stripped executable** as the initial release-review size budget, providing headroom above the measured largest target. Revisit it explicitly when product requirements justify growth. This budget covers the host; record SDK/archive sizes and notice payloads separately. Unpacked totals sum ordinary file contents and exclude filesystem allocation overhead. The conservative toolchain notice bundle accounts for most of that payload. Independent inspection finds only `libSystem` and `libiconv` dependencies on macOS; both Linux ELF executables have neither an interpreter segment nor dynamic `DT_NEEDED` entries.
 
-The candidate Python wheel is 12,681 bytes, SHA-256 `ab190b349a6248d302ace351616e49bfc34e56842e9b325b3b2eb1ffef39e152`. Hosted `uv` 0.13.6 installs version 0.1.0 into an isolated application environment and passes all four installation/refusal controls. The JVM, Node and Python archive consumers and the wheel consumer each produce two successful cold calls with zero workers and two successful required-warm calls with one reused worker and clean cleanup through the same run's packaged host. Actual versioned public-download URLs remain a post-publication check.
+The candidate Python wheel is 12,771 bytes, SHA-256 `d7d5d9c47a5f790f0923ff2317c46eb4b3bc76697e30a1aa0b85794375653c12`. Hosted `uv` 0.13.6 installs version 0.1.0 into an isolated application environment and passes all four installation/refusal controls. The JVM, Node and Python archive consumers and the wheel consumer each produce two successful cold calls with zero workers and two successful required-warm calls with one reused worker and clean cleanup through the same run's packaged host. Actual versioned public-download URLs remain a post-publication check.
 
 ## Before the first release
 
