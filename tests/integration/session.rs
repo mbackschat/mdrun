@@ -409,6 +409,38 @@ for (const command of ['refuse','ignore']) {
 
 #[test]
 #[ignore = "requires a prepared Node runtime selected by MDRUN_NODE"]
+fn late_sdk_output_after_shutdown_fails_the_session_despite_successful_calls() {
+    let fixture = Fixture::new();
+    let node = node();
+    let worker =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/runtime/node/fixture-worker.mjs");
+    fixture.binding(json!([node, worker]), json!(["/bin/sh", "-c", "exit 99"]));
+    let driver = fixture.write(
+        "author.mjs",
+        r#"import {spawnSync} from 'node:child_process';
+const result=spawnSync('tool',['late_shutdown_stdout']);
+process.exit(result.status??99);
+"#,
+    );
+    let output = fixture.run(
+        &["--require-warm"],
+        &[node.to_str().unwrap(), driver.to_str().unwrap()],
+    );
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let report = fixture.report();
+    assert_eq!(report["author_status"]["exit_code"], 0);
+    assert_eq!(report["application_statuses"][0]["exit_code"], 0);
+    assert_eq!(report["warm_calls"], 1);
+    assert_eq!(
+        report["infrastructure_failure"],
+        "worker orderly shutdown failed"
+    );
+    assert_eq!(report["cleanup"]["outcome"], "clean");
+}
+
+#[test]
+#[ignore = "requires a prepared Node runtime selected by MDRUN_NODE"]
 fn lost_acceptance_never_retries_effects_even_when_the_author_masks_failure() {
     let fixture = Fixture::new();
     let node = node();
