@@ -69,6 +69,18 @@ pub enum Command {
         /// Write a copy with updated output to FILE.
         #[arg(long, value_name = "FILE")]
         output: Option<PathBuf>,
+        /// Verify through a prepared cooperative application binding.
+        #[arg(long)]
+        binding: Option<PathBuf>,
+        /// Select warm eligibility or the independent packaged launcher.
+        #[arg(long, value_enum, requires = "binding")]
+        mode: Option<crate::session::Mode>,
+        /// Write a versioned session report outside recorded output.
+        #[arg(long, requires = "binding")]
+        report: Option<PathBuf>,
+        /// Reject calls that cannot execute warm.
+        #[arg(long, requires = "binding")]
+        require_warm: bool,
     },
 
     /// Print shell commands that recreate a document.
@@ -100,6 +112,24 @@ pub enum Command {
         /// Zero-based parsed-block index, identical to verify's block positions.
         block: usize,
     },
+
+    /// Run an author command with one managed application binding.
+    Session {
+        #[command(flatten)]
+        options: crate::session::Options,
+        /// Command and arguments to execute within the managed session.
+        #[arg(last = true, required = true)]
+        command: Vec<OsString>,
+    },
+
+    #[command(name = "__custodian", hide = true)]
+    Custodian {
+        #[arg(long)]
+        config: PathBuf,
+    },
+
+    #[command(name = "__anchor", hide = true)]
+    Anchor,
 }
 
 #[cfg(all(test, unix))]
@@ -107,6 +137,30 @@ mod tests {
     use super::*;
     use std::os::unix::ffi::OsStringExt;
     use std::path::Path;
+
+    #[test]
+    fn session_terminator_preserves_application_flags_and_native_arguments() {
+        let application_args = [
+            OsString::from("tool"),
+            OsString::from("--help"),
+            OsString::from("--binding=application.json"),
+            OsString::from("--mode"),
+            OsString::from("application-mode"),
+            OsString::from_vec(b"native-\xff".to_vec()),
+        ];
+        let cli = Cli::try_parse_from(
+            ["mdrun", "session", "--binding", "binding.json", "--"]
+                .map(OsString::from)
+                .into_iter()
+                .chain(application_args.iter().cloned()),
+        )
+        .unwrap();
+        let Command::Session { options, command } = cli.command else {
+            panic!("expected session command");
+        };
+        assert_eq!(options.binding, PathBuf::from("binding.json"));
+        assert_eq!(command, application_args);
+    }
 
     #[test]
     fn native_paths_interpreters_and_code_keep_their_original_bytes() {

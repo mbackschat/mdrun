@@ -7,6 +7,8 @@ Current status: document CLI and read-only discovery qualified on macOS/Linux, 2
 | [Product contract](PRODUCT.md) | Current behavior, accepted goals and architectural boundaries |
 | [Implementation plan](PLAN.md) | Milestone ordering, open decisions and acceptance gates |
 | [Active plans](plans/README.md) | Detailed compatibility and consumer qualification |
+| [Proposed session protocol](plans/session-protocol.md) | Developing native/SDK contract and proof obligations before API freeze |
+| [Node SDK](../sdk/node/README.md) | Experimental cooperative worker API, examples and resource limits |
 | [Deferred work](DEFERRED.md) | Unscheduled scope and reopening conditions |
 | [Distribution](distribution.md) | Release targets, artifacts, Homebrew and Linux package qualification |
 | [Dependency choices](dependencies.md) | Reasons for compiled libraries and qualification policy |

@@ -24,6 +24,15 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26.10.0'
+      - name: Qualify the cooperative Node SDK
+        timeout-minutes: 1
+        run: node --test --test-timeout=10000 tests/runtime/node/worker.test.mjs
+      - name: Qualify native sessions with Node
+        timeout-minutes: 1
+        run: MDRUN_NODE="$(command -v node)" cargo test --locked --test integration session:: -- --ignored
       - run: cargo build --release --locked
       - uses: actions/upload-artifact@v7
         with:

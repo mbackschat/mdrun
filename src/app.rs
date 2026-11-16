@@ -148,7 +148,35 @@ pub fn execute(action: &Action, workdir: Option<&Path>) -> Result<i32, String> {
             write(path, &doc.pop()?)?;
             post(&doc, remote, b"pop", &[]);
         }
-        Action::Verify { file: path, output } => {
+        Action::Verify {
+            file: path,
+            output,
+            binding,
+            mode,
+            report,
+            require_warm,
+        } => {
+            if let Some(binding) = binding {
+                let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
+                let mut command = vec![
+                    std::env::current_exe()
+                        .map_err(|error| error.to_string())?
+                        .into_os_string(),
+                    OsString::from("verify"),
+                    cwd.join(path).into_os_string(),
+                ];
+                if let Some(output) = output {
+                    command.push(OsString::from("--output"));
+                    command.push(cwd.join(output).into_os_string());
+                }
+                let options = crate::session::Options {
+                    binding: binding.clone(),
+                    mode: mode.unwrap_or(crate::session::Mode::Fast),
+                    report: report.clone(),
+                    require_warm: *require_warm,
+                };
+                return crate::session::host::run(&options, &command, workdir);
+            }
             let doc = read(path)?;
             let mut replacements = Vec::new();
             let mut differences = Vec::new();
@@ -218,6 +246,16 @@ pub fn execute(action: &Action, workdir: Option<&Path>) -> Result<i32, String> {
         Action::Preview { file, block } => {
             let doc = read(file)?;
             stdout(discovery::preview(&doc, *block)?)?;
+        }
+        Action::Session { options, command } => {
+            return crate::session::host::run(options, command, workdir);
+        }
+        Action::Custodian { config } => {
+            return crate::session::custody::run_custodian(config)
+                .map_err(|error| error.to_string());
+        }
+        Action::Anchor => {
+            return crate::session::custody::run_anchor().map_err(|error| error.to_string());
         }
     }
     Ok(0)

@@ -136,6 +136,30 @@ fn missing_unknown_and_extra_arguments_use_standard_parser_errors_without_effect
         &["--workdir"],
         &["verify", "doc.md", "--output"],
         &["extract", "doc.md", "--filename"],
+        &["session"],
+        &["session", "--binding", "binding.json"],
+        &[
+            "session",
+            "--binding",
+            "binding.json",
+            "--unknown",
+            "--",
+            "tool",
+        ],
+        &[
+            "session",
+            "--binding",
+            "binding.json",
+            "--mode",
+            "invalid",
+            "--",
+            "tool",
+        ],
+        &["verify", "doc.md", "--mode", "cold"],
+        &["verify", "doc.md", "--report", "report.json"],
+        &["verify", "doc.md", "--require-warm"],
+        &["__custodian"],
+        &["__anchor", "unexpected"],
     ];
     for args in cases {
         let fixture = Fixture::new();

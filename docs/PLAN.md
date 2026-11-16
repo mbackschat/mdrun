@@ -1,6 +1,6 @@
 # Implementation plan
 
-Status: active, 2026-11-16. Repository setup and three-target packaging dry run passed. M1/M2 and M2a discovery passed hosted macOS/Linux qualification, most recently at `cb75f36`. M3 session/SDK implementation is next, guided by the reviewed [proposed contract](plans/session-protocol.md). Follow [PRODUCT](PRODUCT.md) for accepted scope and [extracted research](research/README.md) for provenance.
+Status: active, 2026-11-16. Repository setup and three-target packaging dry run passed. M1/M2 and M2a discovery passed hosted macOS/Linux qualification, most recently at `cb75f36`. M3 native sessions and the Node SDK are implemented as an experimental foundation under qualification, guided by the reviewed [proposed contract](plans/session-protocol.md). Follow [PRODUCT](PRODUCT.md) for accepted scope and [extracted research](research/README.md) for provenance.
 
 ## Ordered milestones
 

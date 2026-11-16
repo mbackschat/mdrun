@@ -1,0 +1,520 @@
+use serde_json::{Value, json};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output, Stdio};
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
+
+struct Fixture(PathBuf);
+
+impl Fixture {
+    fn new() -> Self {
+        let path =
+            std::env::temp_dir().join(format!("mdrun-session-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&path).unwrap();
+        Self(path)
+    }
+
+    fn write(&self, file: &str, bytes: impl AsRef<[u8]>) -> PathBuf {
+        let path = self.0.join(file);
+        fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    fn binding(&self, worker: Value, cold: Value) {
+        self.write(
+            "binding.json",
+            serde_json::to_vec(&json!({
+                "version":1,"name":"tool","artifact_id":"test-artifact",
+                "worker_argv":worker,"cold_argv":cold,
+                "startup_timeout_ms":5000,"session_timeout_ms":20000,"cleanup_timeout_ms":2000
+            }))
+            .unwrap(),
+        );
+    }
+
+    fn run(&self, extra: &[&str], command: &[&str]) -> Output {
+        self.run_in(&self.0, extra, command)
+    }
+
+    fn run_in(&self, directory: &Path, extra: &[&str], command: &[&str]) -> Output {
+        let mut process = Command::new(env!("CARGO_BIN_EXE_mdrun"));
+        process
+            .args(["session", "--binding"])
+            .arg(self.0.join("binding.json"))
+            .arg("--report")
+            .arg(self.0.join("report.json"))
+            .args(extra)
+            .arg("--")
+            .args(command)
+            .current_dir(directory);
+        self.capture(process)
+    }
+
+    fn capture(&self, mut command: Command) -> Output {
+        self.capture_with_environment(&mut command, &[])
+    }
+
+    fn capture_with_environment(
+        &self,
+        command: &mut Command,
+        environment: &[(&str, &std::ffi::OsStr)],
+    ) -> Output {
+        let stdout = fs::File::create(self.0.join("stdout")).unwrap();
+        let stderr = fs::File::create(self.0.join("stderr")).unwrap();
+        command.env_clear().env("PATH", "/usr/bin:/bin");
+        if cfg!(target_os = "macos")
+            && let Some(node) = std::env::var_os("MDRUN_NODE")
+        {
+            // macOS Node rewrites this at startup; qualify a baseline observed from the selected runtime.
+            static ENCODING: OnceLock<std::ffi::OsString> = OnceLock::new();
+            let encoding = ENCODING.get_or_init(|| {
+                use std::os::unix::ffi::OsStringExt;
+                let output = Command::new(node)
+                    .env_clear()
+                    .env("PATH", "/usr/bin:/bin")
+                    .args(["-p", "process.env.__CF_USER_TEXT_ENCODING ?? ''"])
+                    .output()
+                    .unwrap();
+                assert!(output.status.success());
+                std::ffi::OsString::from_vec(output.stdout.strip_suffix(b"\n").unwrap().to_vec())
+            });
+            command.env("__CF_USER_TEXT_ENCODING", encoding);
+        }
+        let mut child = command
+            .envs(environment.iter().copied())
+            .stdin(Stdio::null())
+            .stdout(stdout)
+            .stderr(stderr)
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!(
+                    "session exceeded its external deadline: {}",
+                    String::from_utf8_lossy(&fs::read(self.0.join("stderr")).unwrap())
+                );
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        Output {
+            status,
+            stdout: fs::read(self.0.join("stdout")).unwrap(),
+            stderr: fs::read(self.0.join("stderr")).unwrap(),
+        }
+    }
+
+    fn report(&self) -> Value {
+        serde_json::from_slice(&fs::read(self.0.join("report.json")).unwrap()).unwrap()
+    }
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn node() -> PathBuf {
+    PathBuf::from(std::env::var_os("MDRUN_NODE").expect(
+        "set MDRUN_NODE to the prepared absolute Node executable for runtime qualification",
+    ))
+}
+
+#[test]
+fn explicit_cold_starts_no_worker_and_preserves_the_application_status() {
+    let fixture = Fixture::new();
+    fixture.binding(
+        json!(["/not/a/prepared/worker"]),
+        json!(["/bin/sh", "-c", "printf 'cold bytes'; exit 7"]),
+    );
+    let output = fixture.run(
+        &["--mode", "cold"],
+        &["tool", "--ordinary-application-flag"],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(7),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, b"cold bytes");
+    let report = fixture.report();
+    assert_eq!(report["worker_starts"], 0);
+    assert_eq!(report["warm_calls"], 0);
+    assert_eq!(report["cold_calls"], 1);
+    assert_eq!(report["cold_reasons"]["explicit_cold"], 1);
+    assert_eq!(report["application_statuses"][0]["exit_code"], 7);
+    assert_eq!(report["infrastructure_failure"], Value::Null);
+    assert_eq!(report["cleanup"]["outcome"], "clean");
+}
+
+#[test]
+fn invalid_binding_and_require_warm_cold_conflict_start_no_payload() {
+    let fixture = Fixture::new();
+    fixture.binding(json!(["relative-worker"]), json!(["/bin/sh"]));
+    let output = fixture.run(&[], &["/bin/sh", "-c", "touch forbidden"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("absolute"));
+    assert!(!fixture.0.join("forbidden").exists());
+    fixture.binding(json!(["/not/a/prepared/worker"]), json!(["/bin/sh"]));
+    let output = fixture.run(
+        &["--mode", "cold", "--require-warm"],
+        &["/bin/sh", "-c", "touch forbidden"],
+    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("warm execution is required"));
+    assert!(!fixture.0.join("forbidden").exists());
+}
+
+#[test]
+fn nested_managed_session_fails_before_starting_its_payload() {
+    let fixture = Fixture::new();
+    fixture.binding(json!(["/not/a/prepared/worker"]), json!(["/bin/true"]));
+    let output = fixture.run(
+        &["--mode", "cold"],
+        &[
+            env!("CARGO_BIN_EXE_mdrun"),
+            "session",
+            "--binding",
+            "binding.json",
+            "--mode",
+            "cold",
+            "--",
+            "/bin/sh",
+            "-c",
+            "touch forbidden",
+        ],
+    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("nested managed sessions"));
+    assert!(!fixture.0.join("forbidden").exists());
+}
+
+#[test]
+fn bound_verify_keeps_document_paths_at_the_call_site_and_executes_in_workdir() {
+    let fixture = Fixture::new();
+    fixture.binding(
+        json!(["/not/a/prepared/worker"]),
+        json!(["/bin/cat", "marker"]),
+    );
+    fs::create_dir(fixture.0.join("work")).unwrap();
+    fixture.write("work/marker", b"selected workdir\n");
+    let document =
+        b"# Existing recording\n\n```sh\ntool\n```\n\n```output\nselected workdir\n```\n";
+    fixture.write("document.md", document);
+    let mut command = Command::new(env!("CARGO_BIN_EXE_mdrun"));
+    command.current_dir(&fixture.0).args([
+        "verify",
+        "document.md",
+        "--binding",
+        "binding.json",
+        "--mode",
+        "cold",
+        "--report",
+        "report.json",
+        "--workdir",
+        "work",
+        "--output",
+        "copy.md",
+    ]);
+    let output = fixture.capture(command);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stdout.is_empty());
+    assert_eq!(fs::read(fixture.0.join("document.md")).unwrap(), document);
+    assert_eq!(fs::read(fixture.0.join("copy.md")).unwrap(), document);
+    assert!(!fixture.0.join("work/copy.md").exists());
+    assert_eq!(fixture.report()["cold_calls"], 1);
+    assert_eq!(fixture.report()["worker_starts"], 0);
+}
+
+#[test]
+fn long_temporary_directory_does_not_change_the_application_environment() {
+    use std::os::unix::ffi::OsStrExt;
+    let fixture = Fixture::new();
+    fixture.binding(
+        json!(["/not/a/prepared/worker"]),
+        json!(["/usr/bin/printenv", "TMPDIR"]),
+    );
+    let directory = fixture.0.join("x".repeat(100));
+    fs::create_dir(&directory).unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_mdrun"));
+    command.current_dir(&fixture.0).args([
+        "session",
+        "--binding",
+        "binding.json",
+        "--mode",
+        "cold",
+        "--",
+        "tool",
+    ]);
+    let output =
+        fixture.capture_with_environment(&mut command, &[("TMPDIR", directory.as_os_str())]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let mut expected = directory.as_os_str().as_bytes().to_vec();
+    expected.push(b'\n');
+    assert_eq!(output.stdout, expected);
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn native_directory_encoding_selects_cold_and_preserves_the_actual_directory() {
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+    let fixture = Fixture::new();
+    fixture.binding(json!(["/not/a/prepared/worker"]), json!(["/bin/pwd"]));
+    let directory = fixture
+        .0
+        .join(std::ffi::OsString::from_vec(b"directory-\xff".to_vec()));
+    fs::create_dir(&directory).unwrap();
+    let output = fixture.run_in(&directory, &[], &["tool"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let mut expected = fs::canonicalize(&directory)
+        .unwrap()
+        .as_os_str()
+        .as_bytes()
+        .to_vec();
+    expected.push(b'\n');
+    assert_eq!(output.stdout, expected);
+    assert_eq!(fixture.report()["cold_reasons"]["native_encoding"], 1);
+    assert_eq!(fixture.report()["worker_starts"], 0);
+}
+
+#[test]
+#[ignore = "requires a prepared Node runtime selected by MDRUN_NODE"]
+fn managed_author_reuses_one_worker_after_an_application_failure() {
+    let fixture = Fixture::new();
+    let node = node();
+    let worker =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/runtime/node/fixture-worker.mjs");
+    fixture.binding(
+        json!([node, worker]),
+        json!(["/bin/sh", "-c", "printf 'unexpected cold'; exit 99"]),
+    );
+    let driver = fixture.write(
+        "author.mjs",
+        r#"import {spawnSync} from 'node:child_process';
+for (const [command,status] of [['ignore',0],['fail',17],['ignore',0]]) {
+  const result=spawnSync('tool',[command]);
+  process.stdout.write(result.stdout); process.stderr.write(result.stderr);
+  if(result.status!==status) process.exit(88);
+}
+"#,
+    );
+    let output = fixture.run(
+        &["--require-warm"],
+        &[node.to_str().unwrap(), driver.to_str().unwrap()],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, b"okok");
+    let report = fixture.report();
+    assert_eq!(report["worker_starts"], 1);
+    assert_eq!(report["warm_calls"], 3);
+    assert_eq!(report["cold_calls"], 0);
+    assert_eq!(report["application_statuses"][1]["exit_code"], 17);
+    assert_eq!(report["outcome"], "success");
+    assert_eq!(report["cleanup"]["outcome"], "clean");
+}
+
+#[test]
+#[ignore = "requires a prepared Node runtime selected by MDRUN_NODE"]
+fn changed_environment_routes_independent_cold_and_require_warm_prevents_it() {
+    let fixture = Fixture::new();
+    let node = node();
+    let worker =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/runtime/node/fixture-worker.mjs");
+    fixture.binding(
+        json!([node, worker]),
+        json!(["/bin/sh", "-c", "printf '%s' \"$CHANGED\""]),
+    );
+    let driver = fixture.write("author.mjs", r#"import {spawnSync} from 'node:child_process';
+const result=spawnSync('tool',['ignore'],{env:{...process.env,CHANGED:'fresh value'}});
+process.stdout.write(result.stdout);process.stderr.write(result.stderr);process.exit(result.status??99);
+"#);
+    let command = [node.to_str().unwrap(), driver.to_str().unwrap()];
+    let output = fixture.run(&[], &command);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, b"fresh value");
+    assert_eq!(fixture.report()["cold_reasons"]["environment"], 1);
+    let output = fixture.run(&["--require-warm"], &command);
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert_eq!(fixture.report()["cold_calls"], 0);
+}
+
+#[test]
+#[ignore = "requires a prepared Node runtime selected by MDRUN_NODE"]
+fn worker_refusal_runs_cold_once_then_reuses_the_same_worker() {
+    let fixture = Fixture::new();
+    let node = node();
+    let worker =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/runtime/node/fixture-worker.mjs");
+    fixture.binding(
+        json!([node, worker]),
+        json!([
+            "/bin/sh",
+            "-c",
+            "printf cold; printf 'effect\\n' >> effects"
+        ]),
+    );
+    let driver = fixture.write(
+        "author.mjs",
+        r#"import {spawnSync} from 'node:child_process';
+for (const command of ['refuse','ignore']) {
+  const result=spawnSync('tool',[command]);
+  process.stdout.write(result.stdout);process.stderr.write(result.stderr);
+  if(result.status!==0) process.exit(88);
+}
+"#,
+    );
+    let output = fixture.run(&[], &[node.to_str().unwrap(), driver.to_str().unwrap()]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, b"coldok");
+    assert_eq!(fs::read(fixture.0.join("effects")).unwrap(), b"effect\n");
+    let report = fixture.report();
+    assert_eq!(report["cold_calls"], 1);
+    assert_eq!(report["cold_reasons"]["unsupported_command"], 1);
+    assert_eq!(report["warm_calls"], 1);
+    assert_eq!(report["worker_starts"], 1);
+}
+
+#[test]
+#[ignore = "requires a prepared Node runtime selected by MDRUN_NODE"]
+fn lost_acceptance_never_retries_effects_even_when_the_author_masks_failure() {
+    let fixture = Fixture::new();
+    let node = node();
+    let worker = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/runtime/node/lost-acceptance-worker.mjs");
+    fixture.binding(
+        json!([node, worker]),
+        json!(["/bin/sh", "-c", "printf 'cold\\n' >> \"$1\"", "--"]),
+    );
+    let effect = fixture.0.join("effects");
+    let driver = fixture.write(
+        "author.mjs",
+        r#"import {spawnSync} from 'node:child_process';
+spawnSync('tool',[process.argv[2]]);
+process.exit(0);
+"#,
+    );
+    let output = fixture.run(
+        &[],
+        &[
+            node.to_str().unwrap(),
+            driver.to_str().unwrap(),
+            effect.to_str().unwrap(),
+        ],
+    );
+    assert!(!output.status.success());
+    assert_eq!(fs::read(effect).unwrap(), b"warm\n");
+    let report = fixture.report();
+    assert_eq!(report["cold_calls"], 0);
+    assert_eq!(report["warm_calls"], 1);
+    assert!(report["infrastructure_failure"].is_string());
+    assert_eq!(report["cleanup"]["outcome"], "clean");
+}
+
+#[test]
+#[ignore = "requires a prepared Node runtime selected by MDRUN_NODE"]
+fn ready_worker_remains_usable_after_the_startup_deadline() {
+    let fixture = Fixture::new();
+    let node = node();
+    let worker =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/runtime/node/fixture-worker.mjs");
+    fixture.binding(json!([node, worker]), json!(["/bin/sh", "-c", "exit 99"]));
+    let mut binding: Value =
+        serde_json::from_slice(&fs::read(fixture.0.join("binding.json")).unwrap()).unwrap();
+    binding["startup_timeout_ms"] = json!(2000);
+    fixture.write("binding.json", serde_json::to_vec(&binding).unwrap());
+    let driver = fixture.write("author.mjs", r#"import {spawnSync} from 'node:child_process';
+await new Promise(resolve=>setTimeout(resolve,2500));
+const result=spawnSync('tool',['ignore']);
+process.stdout.write(result.stdout);process.stderr.write(result.stderr);process.exit(result.status??99);
+"#);
+    let output = fixture.run(
+        &["--require-warm"],
+        &[node.to_str().unwrap(), driver.to_str().unwrap()],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, b"ok");
+    assert_eq!(fixture.report()["warm_calls"], 1);
+}
+
+#[test]
+#[ignore = "requires a prepared Node runtime selected by MDRUN_NODE"]
+fn warm_streams_preserve_large_binary_data_and_do_not_wait_for_unused_stdin() {
+    let fixture = Fixture::new();
+    let node = node();
+    let worker =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/runtime/node/fixture-worker.mjs");
+    fixture.binding(json!([node, worker]), json!(["/bin/sh", "-c", "exit 99"]));
+    let driver = fixture.write(
+        "author.mjs",
+        r#"import assert from 'node:assert/strict';
+import {spawn,spawnSync} from 'node:child_process';
+const input=Buffer.alloc(3*1024*1024+17);
+for(let i=0;i<input.length;i++) input[i]=i%256;
+const echo=spawnSync('tool',['echo'],{input,maxBuffer:8*1024*1024});
+assert.equal(echo.status,0);assert.deepEqual(echo.stdout,input);assert.equal(echo.stderr.length,0);
+const binary=spawnSync('tool',['binary']);
+assert.equal(binary.status,0);assert.deepEqual(binary.stdout,Buffer.from([0,255,1,2]));
+assert.deepEqual(binary.stderr,Buffer.from([254,0]));
+const ignored=spawn('tool',['ignore'],{stdio:['pipe','pipe','pipe']});
+ignored.stdin.on('error',()=>{});
+ignored.stdin.write('input remains open');
+const chunks=[];ignored.stdout.on('data',bytes=>chunks.push(bytes));
+await new Promise((resolve,reject)=>{
+  ignored.once('error',reject);
+  ignored.once('exit',(code,signal)=>{
+    ignored.stdin.destroy();
+    try {assert.equal(code,0);assert.equal(signal,null);resolve();} catch(error){reject(error);}
+  });
+});
+assert.equal(Buffer.concat(chunks).toString(),'ok');
+"#,
+    );
+    let output = fixture.run(
+        &["--require-warm"],
+        &[node.to_str().unwrap(), driver.to_str().unwrap()],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fixture.report()["warm_calls"], 3);
+    assert_eq!(fixture.report()["cold_calls"], 0);
+}
