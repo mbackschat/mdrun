@@ -30,9 +30,16 @@ fn drain_scope(controller: &mut Controller, scope: &str) -> Vec<Value> {
     let mut events = Vec::new();
     loop {
         let event = controller.receive();
-        assert_eq!(event["scope"], scope, "unexpected sibling event: {event}");
         let stopped = event["kind"] == "scope_stopped";
         events.push(event);
+        // libtest retains this history even if the next receive or fixture cleanup panics.
+        eprintln!("draining scope {scope}: {}", events.last().unwrap());
+        assert_eq!(
+            events.last().unwrap()["scope"],
+            scope,
+            "unexpected sibling event; history: {events:#?}; custody snapshot: {:?}",
+            fs::read_to_string(controller.directory.join("custody.status.json"))
+        );
         if stopped {
             return events;
         }

@@ -125,7 +125,7 @@ enum AnchorEvent {
     Interrupted,
     Exited { status: PayloadStatus },
     Sweep { forced: bool },
-    Uncertain,
+    Uncertain { reason: String },
 }
 
 pub struct Custody {
@@ -1158,6 +1158,25 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                         group.forced = forced;
                     }
                     Ok(None) => group.control_closed = true,
+                    Ok(Some((AnchorEvent::Uncertain { reason }, descriptors)))
+                        if descriptors.is_empty() =>
+                    {
+                        group.control_closed = true;
+                        uncertain(group, &mut owner, &mut owner_alive, &reason);
+                    }
+                    Err(error) => {
+                        group.control_closed = true;
+                        uncertain(
+                            group,
+                            &mut owner,
+                            &mut owner_alive,
+                            &format!(
+                                "anchor control receive failed ({:?}, errno {:?})",
+                                error.kind(),
+                                error.raw_os_error()
+                            ),
+                        );
+                    }
                     _ => {
                         group.control_closed = true;
                         uncertain(
@@ -1239,11 +1258,11 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                             }
                         }
                         Ok(_) => {}
-                        Err(_) => uncertain(
+                        Err(error) => uncertain(
                             group,
                             &mut owner,
                             &mut owner_alive,
-                            "owned group membership cannot be observed",
+                            &format!("owned group membership cannot be observed: {error}"),
                         ),
                     }
                 }
@@ -1333,7 +1352,11 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
 }
 
 fn retain_anchor(control: &mut UnixStream) -> ! {
-    let _ = send_packet(control, &AnchorEvent::Uncertain, &[]);
+    retain_anchor_with_reason(control, "anchor control or self-sweep failed".to_owned())
+}
+
+fn retain_anchor_with_reason(control: &mut UnixStream, reason: String) -> ! {
+    let _ = send_packet(control, &AnchorEvent::Uncertain { reason }, &[]);
     // Without the independent observer, self-SIGKILL would release the last lease early.
     unsafe {
         libc::kill(0, libc::SIGTERM);
@@ -1479,7 +1502,10 @@ pub fn run_anchor() -> io::Result<i32> {
                     }
                 }
                 Ok(None) => {}
-                Err(_) => retain_anchor(&mut control),
+                Err(error) => retain_anchor_with_reason(
+                    &mut control,
+                    format!("payload exit observation failed: {error}"),
+                ),
             }
         }
         if report_interruption(&mut control, &mut interruption, term) {
@@ -1488,7 +1514,10 @@ pub fn run_anchor() -> io::Result<i32> {
         if let Some(started) = stopped {
             let members = match platform::live_group_members(unsafe { libc::getpgrp() }) {
                 Ok(members) => members,
-                Err(_) => retain_anchor(&mut control),
+                Err(error) => retain_anchor_with_reason(
+                    &mut control,
+                    format!("owned group membership cannot be observed: {error}"),
+                ),
             };
             let live_payload = members
                 .into_iter()
@@ -1520,6 +1549,16 @@ pub fn run_anchor() -> io::Result<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn anchor_uncertainty_preserves_the_observation_reason_on_the_wire() {
+        let frame = serde_json::json!({
+            "kind": "uncertain",
+            "reason": "owned group membership cannot be observed: Permission denied (os error 13)"
+        });
+        let event: AnchorEvent = serde_json::from_value(frame.clone()).unwrap();
+        assert_eq!(serde_json::to_value(event).unwrap(), frame);
+    }
 
     #[test]
     fn custody_status_readers_retain_one_complete_snapshot_during_update() {
@@ -1625,7 +1664,7 @@ mod tests {
             }
             let event = receive_packet::<AnchorEvent>(&mut control)?;
             if !expect_sweep {
-                if matches!(event, Some((AnchorEvent::Uncertain, descriptors)) if descriptors.is_empty())
+                if matches!(event, Some((AnchorEvent::Uncertain { .. }, descriptors)) if descriptors.is_empty())
                 {
                     let until = Instant::now() + Duration::from_millis(100);
                     loop {
