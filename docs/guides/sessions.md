@@ -1,6 +1,6 @@
 # Reuse a qualified application
 
-Managed sessions are experimental while runtime and release qualification continues. They reuse application initialization across repeated calls; they do not cache command results or automatically make an arbitrary script safe to reuse.
+Managed sessions follow the frozen version-1 contract for the 0.1.0 release candidate; final artifact checks remain open and publication is held. They reuse application initialization across repeated calls; they do not cache command results or automatically make an arbitrary script safe to reuse.
 
 ## What you prepare
 
@@ -69,7 +69,7 @@ The `cold_reasons` object counts the reasons actually selected by the host. Host
 
 ## Version 1 reports
 
-Reports describe execution and cleanup separately from captured application output. Check `version` before interpreting fields; the managed-session API and report contract remain experimental. Report files contain no captured application bytes or session credentials. After preflight succeeds, mdrun invalidates any previous report before managed execution; complete JSON publishes through a temporary file and rename. Preflight rejection can leave an older report in place, and setup or publication failure can leave no new report. Check the command result and report freshness; a missing, unreadable or stale report cannot establish success.
+Reports describe execution and cleanup separately from captured application output. Check `version` before interpreting fields; the version-1 schemas below are frozen for this release candidate. Report files contain no captured application bytes or session credentials. After preflight succeeds, mdrun invalidates any previous report before managed execution; complete JSON publishes through a temporary file and rename. Preflight rejection can leave an older report in place, and setup or publication failure can leave no new report. Check the command result and report freshness; a missing, unreadable or stale report cannot establish success.
 
 The single-session report used by `session`, `verify --binding` and each completed batch document has these fields:
 

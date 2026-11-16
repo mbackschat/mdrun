@@ -1,6 +1,6 @@
-# Experimental Python worker SDK
+# Python worker SDK — version 1
 
-This dependency-free package implements the proposed [session protocol](../../docs/plans/session-protocol.md) for one cooperative application in a dedicated Python process. The API is experimental. The native Rust host remains standalone; Python is required only for a separately launched Python worker. Registry publication remains deferred; the SDK does not establish arbitrary Python state/resource cleanup.
+This dependency-free package implements the frozen [version-1 session contract](../../docs/plans/session-protocol.md) for one cooperative application in a dedicated Python process. The documented API is frozen for the 0.1.0 release candidate; publication is held, and the [execution checklist](../../docs/plans/execution.md) records runtime evidence and remaining artifact checks. The native Rust host remains standalone; Python is required only for a separately launched Python worker. Registry publication remains deferred, and each application still requires its own parity and resource qualification; the SDK does not establish arbitrary Python state/resource cleanup.
 
 ## Prepare the SDK
 

@@ -1,6 +1,6 @@
-# Experimental Node worker SDK
+# Node worker SDK — version 1
 
-This dependency-free ESM peer implements the proposed [session protocol](../../docs/plans/session-protocol.md). It is an experimental vertical slice, not a qualified public API or an automatic Node state reset facility. Fake-host and Rust-host interoperability tests pass with Node v26.10.0 on macOS and Linux; [execution qualification](../../docs/plans/execution.md) records the revisions and remaining application/lifecycle gates.
+This dependency-free ESM peer implements the frozen [version-1 session contract](../../docs/plans/session-protocol.md). The documented API is frozen for the 0.1.0 release candidate; publication is held. Peer and native-host interoperability tests pass with Node v26.10.0 on macOS and Linux; [execution qualification](../../docs/plans/execution.md) records the revisions and remaining artifact checks. Each application still requires its own parity and resource qualification; the SDK is not an automatic Node state reset facility.
 
 Use the [versioned SDK download and preparation guide](../../docs/sdk-distribution.md) to pin a host/SDK version and archive digest in local and CI builds without a source checkout. The prepared directory contains `index.mjs`; import it explicitly from your worker bootstrap. The archive has no registry or external runtime dependencies. Keep the independent cold entrypoint SDK-free.
 

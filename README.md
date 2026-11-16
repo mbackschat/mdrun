@@ -4,7 +4,7 @@
 [![Release builds](https://github.com/mbackschat/mdrun/actions/workflows/release.yml/badge.svg)](https://github.com/mbackschat/mdrun/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-2024-orange.svg)](Cargo.toml)
-[![Status: in development](https://img.shields.io/badge/status-in%20development-yellow.svg)](docs/PLAN.md)
+[![Status: release candidate](https://img.shields.io/badge/status-release%20candidate-yellow.svg)](docs/PLAN.md)
 
 **Turn a command-line demonstration into a document you can check again.**
 
@@ -39,7 +39,7 @@ The complete file also has your title, timestamp and note. It is ordinary Markdo
 
 ## Install and get help
 
-**Development preview:** there is no published product release yet. Document editing, replay and discovery have macOS/Linux qualification. Managed sessions and the JVM, Node and Python SDKs are implemented experimentally; their APIs and remaining release gates are tracked in the [implementation plan](docs/PLAN.md).
+**0.1.0 release candidate:** there is no published product release yet, and publication is held at the owner's request. Document editing, replay, discovery and cooperative managed execution have macOS/Linux qualification. The public session and SDK version-1 contract is frozen; final artifact checks remain tracked in the [implementation plan](docs/PLAN.md). Application adapters still need their own parity and resource qualification.
 
 To try the current source, install Rust/Cargo and build the pinned dependencies:
 
@@ -116,8 +116,8 @@ The first two commands inventory recognized executable blocks without running th
 | Recreate the authoring commands | `extract FILE` | Print a shell script; inspect before running |
 | Discover commands | `list FILE...` | Show an inventory, optionally filtered or JSON |
 | Inspect one command | `preview FILE BLOCK` | Print complete fenced source without execution |
-| Reuse an application | `session --binding FILE -- COMMAND...` | Run an author script with a managed binding; experimental |
-| Verify independent documents | `verify-many --binding FILE FILE...` | Run bounded sessions; experimental |
+| Reuse an application | `session --binding FILE -- COMMAND...` | Run an author script with a prepared cooperative binding |
+| Verify independent documents | `verify-many --binding FILE FILE...` | Run bounded sessions for independent documents |
 | Read offline | `guide [TOPIC]` | Show task guides and reference notes |
 
 Global `--workdir DIR` changes where code executes; document, image and output paths still resolve from your calling directory. Use `--` before positional values starting with a hyphen. Clap supplies ordinary option parsing, help and usage errors.

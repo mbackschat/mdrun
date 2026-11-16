@@ -2,13 +2,13 @@
 
 **mdrun — Create, run, and verify executable Markdown documents.**
 
-Status: document CLI and discovery qualified on macOS/Linux, 2026-11-16. Implemented behavior is described below; required execution behavior remains an accepted implementation goal. The useful source conclusions are recorded in [research provenance](research/README.md) and the [execution plan](plans/execution.md).
+Status: document CLI, discovery and cooperative execution qualified on macOS/Linux, 2026-11-16. The public version-1 session and SDK contract is frozen for the 0.1.0 release candidate; final artifact qualification remains open and publication is held. Implemented behavior and its required guarantees are described below. The useful source conclusions are recorded in [research provenance](research/README.md) and the [execution plan](plans/execution.md).
 
 ## Implemented behavior
 
 The Rust executable implements `init`, `note`, `exec`, `image`, `pop`, `verify` and `extract` with ordinary cold process execution. It supports stdin text/code/image inputs, merged stdout/stderr recording and command exit status, working-directory selection, copied images, replay/diffs and updated output, extraction and remote form/multipart delivery. New documents use mdrun provenance; untouched legacy source and metadata are retained. Explicitly choosing the input as `verify --output` updates that file; ordinary verification is read-only.
 
-Clap owns all parsing, help and version output. Normal informational requests exit 0; invalid or missing arguments exit 2; document/verification failures exit 1. `exec` returns the child status (255 for signal termination on qualified Unix behavior). `list` and `preview` provide the discovery behavior below. `guide` embeds the maintained document/session/reference guides, and generated man pages share the public clap definitions. Native session, Node SDK, JVM SDK and Python SDK code is under qualification against the [proposed session contract](plans/session-protocol.md); it is not yet a supported migration boundary. Compiled Rust libraries do not require an installed language runtime or Showboat for host operation; invoked programs still need their own interpreters.
+Clap owns all parsing, help and version output. Normal informational requests exit 0; invalid or missing arguments exit 2; document/verification failures exit 1. `exec` returns the child status (255 for signal termination on qualified Unix behavior). `list` and `preview` provide the discovery behavior below. `guide` embeds the maintained document/session/reference guides, and generated man pages share the public clap definitions. Native sessions and the Node, JVM and Python SDKs implement the frozen [version-1 contract](plans/session-protocol.md); this candidate qualification does not establish parity or safe reuse for an arbitrary application. Compiled Rust libraries do not require an installed language runtime or Showboat for host operation; invoked programs still need their own interpreters.
 
 ## Required document behavior
 
@@ -26,7 +26,7 @@ Selection initially operates on whole documents. Names, tag metadata, interactiv
 
 ## Required execution behavior
 
-The host is generic Rust; runtime SDKs implement the external versioned protocol, and application adapters qualify callable entry points and reset/resource behavior. The runtime order is JVM and Node, then Python. Begin with one accelerated binding per session. Unrelated application fixtures must exercise the same boundary before its API freezes; application-specific build, eligibility and reset policies remain outside the host.
+The host is generic Rust; JVM, Node and Python SDKs implement the external versioned protocol, and application adapters qualify callable entry points and reset/resource behavior. Each session has one accelerated binding. Independent application fixtures exercise the shared boundary; application-specific build, eligibility and reset policies remain outside the host.
 
 Fast execution is the ordinary development route for qualified cooperative bindings; unqualified commands execute normally. Explicit cold execution exercises the actual packaged launcher with original context and descriptors and starts no warm machinery. Session-local native forwarding preserves existing shell blocks, pipes, redirects and executable names. Runtime/application initialization may be reused; command results may not be cached implicitly.
 
@@ -34,7 +34,7 @@ Fast execution is the ordinary development route for qualified cooperative bindi
 | --- | --- |
 | Binding | Prepared worker argv, absolute cold launcher and immutable artifact identity supplied externally; fixed startup context captured by the host or explicitly configured |
 | Admission | Side-effect-free classification before acceptance; no stdin consumption during classification; no retry after acceptance |
-| Context | Unsupported cwd/PWD, environment, umask, terminal, encoding or startup-option differences select cold before execution; experimental bindings may explicitly declare qualified `SHLVL`/`_` irrelevance for warm comparison only |
+| Context | Unsupported cwd/PWD, environment, umask, terminal, encoding or startup-option differences select cold before execution; bindings may explicitly declare qualified `SHLVL`/`_` irrelevance for warm comparison only |
 | Streams | Lazy input, streamed binary output, bounded backpressure and descriptor fidelity; frame bounds are not total-input bounds |
 | Sequential reuse | Invocation ownership extends through output flush and client acknowledgement, including cold calls |
 | Failures | Application status is distinct from infrastructure/cleanup status; masked transport failures still fail the session |

@@ -1,6 +1,6 @@
 # Documentation
 
-Document CLI and read-only discovery are implemented; earlier macOS/Linux qualification does not qualify the rewritten revision, as explained in the [qualification note](PLAN.md#qualification-after-history-cleanup). Managed sessions and JVM, Node and Python SDKs are experimental; runtime and release qualification continues. Current documents below govern work; the research index maps the extracted conclusions to their maintained owners.
+Document CLI, read-only discovery and cooperative managed execution have current macOS/Linux runtime qualification. The public session and SDK version-1 contract is frozen for the 0.1.0 release candidate; final artifact checks remain open and publication is held. The [implementation plan](PLAN.md) identifies exact-revision evidence and remaining gates. Current documents below govern work; the research index maps the extracted conclusions to their maintained owners.
 
 | Document | Owns |
 | --- | --- |
@@ -10,11 +10,11 @@ Document CLI and read-only discovery are implemented; earlier macOS/Linux qualif
 | [Architecture](architecture.md) | Native document/session components, runtime adapter boundary, custody, batch output and evidence limits |
 | [Implementation plan](PLAN.md) | Milestone ordering, open decisions and acceptance gates |
 | [Active plans](plans/README.md) | Detailed compatibility and consumer qualification |
-| [Proposed session protocol](plans/session-protocol.md) | Developing native/SDK contract and proof obligations before API freeze |
-| [Node SDK](../sdk/node/README.md) | Experimental cooperative worker API, examples and resource limits |
-| [JVM SDK](../sdk/jvm/README.md) | Experimental Java 21 worker API, preparation and application reset contract |
+| [Version-1 session contract](plans/session-protocol.md) | Frozen public candidate contract, cooperative ownership boundary and qualification invariants |
+| [Node SDK](../sdk/node/README.md) | Version-1 cooperative worker API, examples and resource limits |
+| [JVM SDK](../sdk/jvm/README.md) | Version-1 Java 21 worker API, preparation and application reset contract |
 | [JVM character output example](../sdk/jvm/examples/README.md) | Request-owned Appendable sinks, charset parity and explicit lifetime limits |
-| [Python SDK](../sdk/python/README.md) | Experimental cooperative Python application API, binary streams and cancellation limits |
+| [Python SDK](../sdk/python/README.md) | Version-1 cooperative Python application API, binary streams and cancellation limits |
 | [Deferred work](DEFERRED.md) | Unscheduled scope and reopening conditions |
 | [Distribution](distribution.md) | Release targets, artifacts, Homebrew and Linux package qualification |
 | [Performance](performance.md) | Measured complete-session cold/warm comparisons, artifact identities and reproduction |

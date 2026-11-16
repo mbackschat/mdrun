@@ -11,7 +11,7 @@ Inspection:
 
 For one command's syntax and examples, use mdrun COMMAND --help.
 For longer authoring workflows, use mdrun guide documents.
-For experimental warm execution and binding requirements, use mdrun guide sessions.
+For cooperative warm execution and binding requirements, use mdrun guide sessions.
 For exit statuses, files and environment, use mdrun guide reference.";
 
 pub const INIT: &str = "Example:
@@ -65,7 +65,7 @@ The input stays unchanged unless explicitly selected as --output.
 An output copy contains updated captures even when differences cause exit 1.
 Review the diff and candidate before replacing your original document.
 
-With --binding, verification uses an experimental managed session.
+With --binding, verification uses a cooperative managed session.
 --require-warm rejects cold routing; --mode cold starts no worker.
 For binding preparation and report interpretation, use mdrun guide sessions.";
 

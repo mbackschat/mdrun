@@ -1,6 +1,6 @@
 # Prepare a versioned runtime SDK
 
-SDK APIs and managed sessions remain experimental. GitHub Releases package JVM, Node and Python SDK archives plus a standard Python wheel alongside each host version; the host, SDK archive `VERSION` and JVM POM use the exact [Cargo version](../Cargo.toml). No product version has been published yet. Maven Central, npm and PyPI publication remain [deferred](DEFERRED.md); unrelated packages named `mdrun` are not these SDKs.
+SDK APIs and managed sessions follow the frozen [version-1 contract](plans/session-protocol.md) for the 0.1.0 release candidate. GitHub Releases will package JVM, Node and Python SDK archives plus a standard Python wheel alongside each host version; the host, SDK archive `VERSION` and JVM POM use the exact [Cargo version](../Cargo.toml). No product version has been published; publication is held for the owner's pre-release review. Maven Central, npm and PyPI publication remain [deferred](DEFERRED.md); unrelated packages named `mdrun` are not these SDKs.
 
 ## Release files
 

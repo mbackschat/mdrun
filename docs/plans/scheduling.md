@@ -1,6 +1,6 @@
 # Independent document scheduling
 
-Status: experimental M4 implementation and qualification work. The public contract below remains under qualification and does not replace single-document `verify`. This plan refines the [execution checklist](execution.md) and [product contract](../PRODUCT.md); the [history-cleanup qualification note](../PLAN.md#qualification-after-history-cleanup) applies to earlier results.
+Status: implemented and qualified within the cooperative ownership boundary; the public contract below is frozen for the 0.1.0 release candidate and does not replace single-document `verify`. Publication remains held, and the native scope/broker interfaces described below remain revision-local implementation details. The [current execution checkpoint](execution.md#current-candidate-checkpoint) records the three-platform runtime evidence; the [history-cleanup qualification note](../PLAN.md#qualification-after-history-cleanup) applies to earlier results.
 
 ## Public contract
 
@@ -25,7 +25,7 @@ The [native custody contract](session-protocol.md#ownership-and-external-resourc
 
 ## Native scope primitive
 
-The first implementation stage adds internal custody scopes without a scheduler, host broker or `verify-many` entry point. Existing standalone configuration, events and status snapshot fields retain their shapes. The first successful `register_scope` selects scoped mode before any standalone payload launch; mixing modes is a control fault. The existing configuration's `session_timeout_ms` remains the whole custodian lifetime limit. Each registration supplies positive session and cleanup limits, starts its own session clock, and reserves its scope ID for the rest of the custodian lifetime. Group identity is the typed pair `(scope, id)`; sibling scopes may reuse local names such as `author`.
+The first implementation stage added internal custody scopes before the scheduler, host broker and `verify-many` entry point; those layers now use this primitive. Standalone configuration, events and status snapshot fields retain their shapes. The first successful `register_scope` selects scoped mode before any standalone payload launch; mixing modes is a control fault. The configuration's `session_timeout_ms` remains the whole custodian lifetime limit. Each registration supplies positive session and cleanup limits, starts its own session clock, and reserves its scope ID for the rest of the custodian lifetime. Group identity is the typed pair `(scope, id)`; sibling scopes may reuse local names such as `author`.
 
 | Internal request or event | Meaning |
 | --- | --- |
@@ -68,4 +68,4 @@ MDRUN_NATIVE_TEST_BIN=/absolute/path/to/mdrun \
 | Qualify shared exclusion and owner loss | A competing batch cannot acquire the listener, including between scopes; multiple surviving descendants remain excluded after owner loss; one uncertain scope prevents release |
 | Qualify shared-resource document scheduling | Use explicit resource-sharing policy and equal artifacts/workloads; assert concurrent documents, one sequential worker per document, route counts and cleanup |
 
-Resource-free scheduling is an intermediate checkpoint. Keep shared-resource custody qualification open until exclusion, concurrent-scope cleanup and owner-loss controls pass on macOS/Linux.
+Shared-resource custody qualification is complete at `7ffcf4d`: exclusion, concurrent-scope cleanup, owner loss and actual warm-worker scheduling controls pass on macOS and both Linux architectures in the [current execution checkpoint](execution.md#current-candidate-checkpoint). These results cover explicit sharing and cooperative assigned groups; final artifact checks and publication remain separate gates.

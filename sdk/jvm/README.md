@@ -1,6 +1,6 @@
-# Experimental JVM worker SDK
+# JVM worker SDK — version 1
 
-This Java 21 peer implements the proposed [session protocol](../../docs/plans/session-protocol.md) for one cooperative application in a dedicated JVM process. Its API remains experimental; the [execution checklist](../../docs/plans/execution.md) owns qualification and the remaining application, lifecycle and platform gates. The native Rust host remains standalone: Java and Jackson are dependencies of the separately launched JVM worker, not requirements for starting the host or using its ordinary document commands.
+This Java 21 peer implements the frozen [version-1 session contract](../../docs/plans/session-protocol.md) for one cooperative application in a dedicated JVM process. The documented API is frozen for the 0.1.0 release candidate; publication is held, and the [execution checklist](../../docs/plans/execution.md) records runtime evidence and remaining artifact checks. Each application still requires its own parity and resource qualification. The native Rust host remains standalone: Java and Jackson are dependencies of the separately launched JVM worker, not requirements for starting the host or using its ordinary document commands.
 
 ## Prepare the SDK
 
