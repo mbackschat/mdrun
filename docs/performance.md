@@ -22,7 +22,7 @@ The [measurement harness](../tests/performance/compare.py) records raw per-sessi
 
 ## Repeat with prepared release fixtures
 
-First prepare the three synthetic applications using the [SDK consumer qualifier](sdk-distribution.md#reproduce-and-qualify-archives). Then measure one runtime at a time, on an otherwise idle host:
+First prepare the three synthetic applications using the [SDK consumer qualifier](sdk-distribution.md#reproduce-and-qualify-sdk-assets). Then measure one runtime at a time, on an otherwise idle host:
 
 ```sh
 python3 tests/performance/compare.py \

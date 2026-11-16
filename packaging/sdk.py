@@ -1,10 +1,13 @@
 """Build deterministic, versioned runtime SDK archives for GitHub Releases."""
 
 import argparse
+import base64
+import csv
 from datetime import datetime, timezone
 import gzip
+import hashlib
 import importlib.util
-from io import BytesIO
+from io import BytesIO, StringIO
 import json
 from pathlib import Path
 import re
@@ -115,6 +118,41 @@ def archive(root, runtime, output, *, jvm_prepared=None):
     return destination
 
 
+def wheel(root, output):
+    """Build the dependency-free purelib wheel defined by the PyPA wheel specification."""
+    root, output = Path(root), Path(output)
+    release = version(root)
+    info = f"mdrun_sdk-{release}.dist-info/"
+    metadata = ("Metadata-Version: 2.4\nName: mdrun-sdk\n"
+                f"Version: {release}\n"
+                "Summary: Cooperative Python worker SDK for experimental mdrun sessions\n"
+                "Requires-Python: >=3.12\nLicense-Expression: MIT\nLicense-File: LICENSE\n"
+                "Project-URL: Source, https://github.com/mbackschat/mdrun\n"
+                "Description-Content-Type: text/markdown\n\n").encode() + archive_readme(root, "python", release)
+    files = {"mdrun_sdk/__init__.py": regular_file(root / "sdk/python/mdrun_sdk/__init__.py"),
+             info + "METADATA": metadata,
+             info + "WHEEL": b"Wheel-Version: 1.0\nGenerator: mdrun-sdk-builder\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+             info + "licenses/LICENSE": regular_file(root / "LICENSE")}
+    record = StringIO(newline="")
+    rows = csv.writer(record, lineterminator="\n")
+    for name, data in sorted(files.items()):
+        digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
+        rows.writerow((name, "sha256=" + digest, str(len(data))))
+    rows.writerow((info + "RECORD", "", ""))
+    files[info + "RECORD"] = record.getvalue().encode()
+    payload = BytesIO()
+    with zipfile.ZipFile(payload, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as result:
+        for name in sorted(files, key=lambda name: (name.startswith(info), name == info + "RECORD", name)):
+            entry = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            entry.create_system, entry.external_attr, entry.compress_type = 3, 0o100644 << 16, zipfile.ZIP_DEFLATED
+            result.writestr(entry, files[name])
+    output.mkdir(parents=True, exist_ok=True)
+    destination = output / f"mdrun_sdk-{release}-py3-none-any.whl"
+    with destination.open("xb") as result:
+        result.write(payload.getvalue())
+    return destination
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -122,9 +160,12 @@ def main():
     package.add_argument("runtime", choices=consumer.RUNTIMES)
     package.add_argument("output", type=Path)
     package.add_argument("--jvm-prepared", type=Path)
+    python_wheel = commands.add_parser("wheel", help="build the standard pure-Python SDK wheel")
+    python_wheel.add_argument("output", type=Path)
     args = parser.parse_args()
     try:
-        print(archive(ROOT, args.runtime, args.output, jvm_prepared=args.jvm_prepared))
+        print(wheel(ROOT, args.output) if args.command == "wheel" else
+              archive(ROOT, args.runtime, args.output, jvm_prepared=args.jvm_prepared))
     except (OSError, ValueError, ET.ParseError) as error:
         parser.exit(1, f"SDK packaging failed: {error}\n")
 

@@ -1,3 +1,6 @@
+import base64
+import csv
+from email.parser import BytesParser
 import hashlib
 import importlib.util
 import io
@@ -70,6 +73,54 @@ class SdkArchiveTests(unittest.TestCase):
         second = sdk.archive(self.root, "node", self.root / "again")
         self.assertEqual(first.read_bytes(), second.read_bytes())
         self.assertEqual(first.read_bytes()[4:8], bytes(4))
+
+    def test_python_wheel_is_standard_purelib_with_exact_metadata_license_and_record(self):
+        (self.root / "sdk/python/private-adapter.py").write_text("excluded")
+        wheel = sdk.wheel(self.root, self.output)
+        self.assertEqual(wheel.name, "mdrun_sdk-0.1.0-py3-none-any.whl")
+        info = "mdrun_sdk-0.1.0.dist-info/"
+        with zipfile.ZipFile(wheel) as result:
+            self.assertEqual(set(result.namelist()), {"mdrun_sdk/__init__.py", info + "METADATA", info + "WHEEL",
+                                                     info + "RECORD", info + "licenses/LICENSE"})
+            metadata = BytesParser().parsebytes(result.read(info + "METADATA"))
+            for key, value in {"Metadata-Version": "2.4", "Name": "mdrun-sdk", "Version": "0.1.0",
+                               "Requires-Python": ">=3.12", "License-Expression": "MIT", "License-File": "LICENSE",
+                               "Description-Content-Type": "text/markdown"}.items():
+                self.assertEqual(metadata[key], value)
+            self.assertIsNone(metadata["Requires-Dist"])
+            self.assertIn("Experimental Python worker SDK", metadata.get_payload())
+            wheel_metadata = BytesParser().parsebytes(result.read(info + "WHEEL"))
+            self.assertEqual(wheel_metadata["Wheel-Version"], "1.0")
+            self.assertEqual(wheel_metadata["Root-Is-Purelib"], "true")
+            self.assertEqual(wheel_metadata["Tag"], "py3-none-any")
+            self.assertEqual(result.read("mdrun_sdk/__init__.py"), (self.root / "sdk/python/mdrun_sdk/__init__.py").read_bytes())
+            self.assertEqual(result.read(info + "licenses/LICENSE"), (self.root / "LICENSE").read_bytes())
+            rows = list(csv.reader(io.StringIO(result.read(info + "RECORD").decode())))
+            self.assertEqual({row[0] for row in rows}, set(result.namelist()))
+            self.assertEqual(len(rows), len(result.namelist()))
+            for name, digest, size in rows:
+                if name == info + "RECORD":
+                    self.assertEqual((digest, size), ("", ""))
+                else:
+                    payload = result.read(name)
+                    expected = "sha256=" + base64.urlsafe_b64encode(hashlib.sha256(payload).digest()).rstrip(b"=").decode()
+                    self.assertEqual(digest, expected)
+                    self.assertEqual(int(size), len(payload))
+            for entry in result.infolist():
+                self.assertEqual(entry.date_time, (1980, 1, 1, 0, 0, 0))
+                self.assertEqual(entry.external_attr >> 16, 0o100644)
+
+    def test_python_wheel_reproduces_and_refuses_version_drift_or_existing_output(self):
+        wheel = sdk.wheel(self.root, self.output)
+        (self.root / "sdk/python/mdrun_sdk/__init__.py").touch()
+        self.assertEqual(wheel.read_bytes(), sdk.wheel(self.root, self.root / "repeat").read_bytes())
+        with self.assertRaises(FileExistsError):
+            sdk.wheel(self.root, self.output)
+        pom = self.root / "sdk/jvm/pom.xml"
+        pom.write_text(pom.read_text().replace("<version>0.1.0</version>", "<version>0.1.1</version>"))
+        with self.assertRaisesRegex(ValueError, "version"):
+            sdk.wheel(self.root, self.root / "bad-version")
+        self.assertFalse((self.root / "bad-version").exists())
 
     def test_version_drift_and_symlinked_runtime_are_rejected_before_output(self):
         pom = self.root / "sdk/jvm/pom.xml"

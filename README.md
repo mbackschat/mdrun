@@ -54,6 +54,8 @@ Put `target/release/mdrun` in a directory on your PATH to use the examples above
 
 Release automation targets macOS Apple Silicon and Linux x86_64/arm64, with archives, static Linux executables, `.deb`/`.rpm` packages and Homebrew through `mbackschat/tap`. Published installation commands will be added after qualification; see [distribution](docs/distribution.md).
 
+For a cooperative Python application, the release assets also include a standard Python 3.12+ SDK wheel. Install it with `uv pip install` into the application's virtual environment using an exact release URL and SHA-256 requirement; the same pinned file works locally and in CI. The [Python SDK installation guide](docs/sdk-distribution.md#install-the-python-sdk-with-uv) covers release URLs and local wheels. This library is separate from the standalone host, and PyPI publication remains deferred. The commands become usable when the selected release assets are published.
+
 | Need | Command |
 | --- | --- |
 | Find a command quickly | `mdrun -h` |

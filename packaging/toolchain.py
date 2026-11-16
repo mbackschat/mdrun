@@ -29,6 +29,13 @@ def read_verified(root, row):
     return data
 
 
+def check_musl_link_map(text, library):
+    bundled = (library / "self-contained/libc.a").resolve()
+    linked = {Path(path).resolve() for path in re.findall(r"(?<!\S)(/[^\s()]+/libc\.a)(?=[(\s]|$)", text)}
+    if linked != {bundled}:
+        raise ValueError("linked musl must come exclusively from the audited Rust sysroot")
+
+
 def musl_notices(archive):
     """Retain complete notice comments, including architecture-specific source notices."""
     chunks = []
@@ -81,17 +88,23 @@ def generate(root, rustc, musl_archive=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("generate", "check", "record"))
+    parser.add_argument("command", choices=("generate", "check", "record", "check-link"))
     parser.add_argument("--rustc", default="rustc")
     parser.add_argument("--musl-archive", type=Path)
     parser.add_argument("--target")
     parser.add_argument("--source-revision")
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--link-map", type=Path)
     args = parser.parse_args()
     try:
         output = generate(ROOT, args.rustc, args.musl_archive)
         destination = ROOT / "TOOLCHAIN_NOTICES.txt"
-        if args.command == "record":
+        if args.command == "check-link":
+            if args.target not in ("x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl") or args.link_map is None:
+                raise ValueError("check-link requires a Linux release --target and --link-map")
+            library = Path(subprocess.check_output([args.rustc, "--print", "target-libdir", "--target", args.target], text=True).strip())
+            check_musl_link_map(args.link_map.read_text(), library)
+        elif args.command == "record":
             if args.target not in ("aarch64-apple-darwin", "x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl") or not re.fullmatch(r"[a-f0-9]{40}", args.source_revision or "") or args.output is None:
                 raise ValueError("record requires a release --target, full --source-revision and --output")
             if destination.read_bytes() != output:
@@ -102,10 +115,17 @@ def main():
                 raise ValueError("target standard-library/runtime artifacts are missing")
             record = {"source_revision": args.source_revision, "target": args.target,
                       "compiler": subprocess.check_output([args.rustc, "-Vv"], text=True),
+                      "binary_size_bytes": (ROOT / "target" / args.target / "release/mdrun").stat().st_size,
                       "binary_sha256": digest((ROOT / "target" / args.target / "release/mdrun").read_bytes()),
                       "attribution_sha256": digest(output),
                       "toolchain_inventory_sha256": digest((ROOT / "packaging/toolchain.json").read_bytes()),
                       "runtime_artifacts": [{"path": p.relative_to(library).as_posix(), "sha256": digest(p.read_bytes())} for p in libraries]}
+            if args.target.endswith("-linux-musl"):
+                record["c_build_tools"] = {
+                    "scope": "C/assembly compilation only; the linked musl runtime comes from the audited Rust sysroot",
+                    "compiler": subprocess.check_output(["musl-gcc", "--version"], text=True),
+                    "packages": subprocess.check_output(["dpkg-query", "-W", "musl-tools", "musl-dev"], text=True),
+                }
             args.output.write_text(json.dumps(record, indent=2) + "\n")
         elif args.command == "generate":
             destination.write_bytes(output)

@@ -13,6 +13,15 @@ spec.loader.exec_module(toolchain)
 
 
 class ToolchainNoticesTests(unittest.TestCase):
+    def test_musl_link_map_rejects_system_libc_even_when_audited_archive_is_present(self):
+        library = Path("/audited-rust/lib/rustlib/x86_64-unknown-linux-musl/lib")
+        bundled = library / "self-contained/libc.a"
+        for text in (f"LOAD {bundled}\n", f"1000 1000 12 4 {bundled}(memcpy.lo):(.text)\n"):
+            toolchain.check_musl_link_map(text, library)
+            for invalid in ("no libc attribution\n", "/usr/lib/x86_64-linux-musl/libc.a(memcpy.lo)\n", text + "LOAD /usr/lib/x86_64-linux-musl/libc.a\n"):
+                with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "linked musl"):
+                    toolchain.check_musl_link_map(invalid, library)
+
     def test_compiler_version_and_source_commit_both_must_match(self):
         pinned = {"release": "1.98.1", "commit": "a" * 40}
         good = "release: 1.98.1\ncommit-hash: " + "a" * 40 + "\n"

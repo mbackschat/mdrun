@@ -101,7 +101,11 @@ def qualify(archives, version, java_home, node, python, mdrun, output):
             (directory / ("cold" + suffix)).replace(cold_directory / ("cold" + suffix))
             shutil.copyfile(directory / ("application" + suffix), cold_directory / ("application" + suffix))
             worker = [executable, str(directory / ("worker" + suffix))]
-            cold = [executable, str(cold_directory / ("cold" + suffix))]
+            cold = [executable, *(["-S"] if runtime == "python" else []), str(cold_directory / ("cold" + suffix))]
+            if runtime == "python" and run(
+                    [python, "-S", "-c", "from importlib.util import find_spec; print(find_spec('mdrun_sdk'))"],
+                    cold_directory) != b"None\n":
+                raise ValueError("cold application interpreter can import the cooperative Python SDK")
         identities = {path.relative_to(directory).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
                       for path in sorted(directory.rglob("*")) if path.is_file()}
         binding = {"version": 1, "name": "tool", "worker_argv": worker, "cold_argv": cold,

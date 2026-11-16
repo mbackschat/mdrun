@@ -2,6 +2,8 @@
 
 Status: document CLI and discovery are implemented; managed sessions and runtime SDKs remain experimental. The [execution checklist](plans/execution.md) owns remaining lifecycle, runtime and release gates, including unresolved Linux scope-cleanup qualification.
 
+Publication boundary, 2026-11-16: the owner requested a stop before release. Complete implementation and non-publishing qualification, then hand back the candidate for review. Do not create a release tag, publish GitHub assets or publish a Homebrew formula until the owner resumes that work. Actual public-download and Homebrew publication checks remain explicit release gates.
+
 ## External review remediation
 
 The independent review of the pre-rewrite source and unfinished working tree on 2026-11-16 found the session/batch slice unready. Passing ordinary tests and SDK peer suites does not establish native-host, Linux, installed-package or release qualification. The following findings remain open until independently discriminating regression guards and the applicable platform checks pass.

@@ -51,11 +51,28 @@ jobs:
       - run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy --target ${{ matrix.target }} && rustup default 1.98.1
       - name: Verify and preserve audited toolchain attribution
         run: python3 packaging/toolchain.py generate
+      - name: Install the native musl C compiler
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends musl-tools
+          musl-gcc --version
+          dpkg-query -W musl-tools musl-dev
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
       - run: python3 -m unittest discover -s packaging -p 'test_*.py'
-      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Build the macOS release
+        if: runner.os == 'macOS'
+        run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Build Linux with the audited Rust musl runtime
+        if: runner.os == 'Linux'
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CC_aarch64_unknown_linux_musl: musl-gcc
+        run: |
+          cargo rustc --release --locked --target "${{ matrix.target }}" -- -C link-self-contained=yes -C "link-arg=-Wl,-Map=$RUNNER_TEMP/mdrun-link.map"
+          python3 packaging/toolchain.py check-link --target "${{ matrix.target }}" --link-map "$RUNNER_TEMP/mdrun-link.map"
       - name: Package native archive
         run: python3 packaging/distribution.py archive "${{ matrix.target }}" dist
       - name: Record exact compiler and linked runtime inputs
@@ -102,6 +119,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: '0.13.6'
       - uses: actions/download-artifact@v8
         with:
           name: native-x86_64-unknown-linux-musl
@@ -117,10 +137,18 @@ jobs:
           python3 packaging/sdk.py archive jvm dist --jvm-prepared "$RUNNER_TEMP/jvm-sdk"
           python3 packaging/sdk.py archive node dist
           python3 packaging/sdk.py archive python dist
+          python3 packaging/sdk.py wheel dist
           cp scripts/prepare_sdk.py dist/prepare_sdk.py
       - name: Qualify pinned SDK installation outside the checkout
         run: |
           python3 packaging/qualify_sdk.py --archives dist --version "$(python3 packaging/distribution.py version)" --java-home "$JAVA_HOME" --node "$(command -v node)" --python "$(command -v python3)" --mdrun "$MDRUN_SDK_HOST" --output "$RUNNER_TEMP/sdk-consumer"
+      - name: Qualify uv wheel installation and refusal guards
+        run: MDRUN_UV="$(command -v uv)" python3 -m unittest discover -s packaging -p 'test_python_wheel.py'
+      - name: Qualify the uv-installed Python SDK with the release host
+        run: |
+          wheel="$PWD/dist/mdrun_sdk-$(python3 packaging/distribution.py version)-py3-none-any.whl"
+          digest="$(sha256sum "$wheel" | cut -d' ' -f1)"
+          python3 packaging/qualify_python_wheel.py --wheel "$wheel" --version "$(python3 packaging/distribution.py version)" --sha256 "$digest" --python "$(command -v python3)" --uv "$(command -v uv)" --mdrun "$MDRUN_SDK_HOST" --output "$RUNNER_TEMP/sdk-wheel-consumer"
       - uses: actions/upload-artifact@v7
         with:
           name: sdk-assets
@@ -130,7 +158,9 @@ jobs:
         if: always()
         with:
           name: sdk-consumption
-          path: ${{ runner.temp }}/sdk-consumer
+          path: |
+            ${{ runner.temp }}/sdk-consumer
+            ${{ runner.temp }}/sdk-wheel-consumer
           if-no-files-found: error
 
   assemble:
@@ -151,7 +181,7 @@ jobs:
           path: dist
       - name: Generate checksums and Homebrew formula
         run: |
-          (cd dist && sha256sum mdrun-*.tar.gz mdrun*.deb mdrun*.rpm mdrun-build-*.json prepare_sdk.py > SHA256SUMS)
+          (cd dist && sha256sum mdrun-*.tar.gz mdrun_sdk-*.whl mdrun*.deb mdrun*.rpm mdrun-build-*.json prepare_sdk.py > SHA256SUMS)
           python3 packaging/distribution.py formula "$(python3 packaging/distribution.py version)" dist/SHA256SUMS > dist/mdrun.rb
           ruby -c dist/mdrun.rb
       - uses: actions/upload-artifact@v7
@@ -173,6 +203,6 @@ jobs:
           path: dist
       - name: Publish verified assets
         working-directory: dist
-        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes mdrun-*.tar.gz mdrun*.deb mdrun*.rpm mdrun-build-*.json prepare_sdk.py SHA256SUMS mdrun.rb
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes mdrun-*.tar.gz mdrun_sdk-*.whl mdrun*.deb mdrun*.rpm mdrun-build-*.json prepare_sdk.py SHA256SUMS mdrun.rb
         env:
           GH_TOKEN: ${{ github.token }}

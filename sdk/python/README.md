@@ -4,7 +4,9 @@ This dependency-free package implements the proposed [session protocol](../../do
 
 ## Prepare the SDK
 
-Use the [versioned SDK download and preparation guide](../../docs/sdk-distribution.md) to pin a host/SDK version and archive digest in local and CI builds without a source checkout. Add that prepared directory, containing `mdrun_sdk/__init__.py`, to your worker's Python import path. The archive requires only the standard library; it contains no application adapter or tests. Keep the independent cold entrypoint SDK-free.
+Use the [versioned SDK distribution guide](../../docs/sdk-distribution.md#install-the-python-sdk-with-uv) to install the standard `mdrun_sdk-VERSION-py3-none-any.whl` GitHub release asset into your application virtual environment with `uv pip install`. Pin its exact versioned URL and SHA-256 in the same requirements file locally and in CI; a verified local wheel works too. The distribution is named `mdrun-sdk` and provides `mdrun_sdk` for Python 3.12 or later, with no external dependencies or CLI entrypoint. Start the worker with that virtual environment's Python. The standalone Rust host is installed separately, and PyPI publication remains deferred.
+
+The [archive preparation route](../../docs/sdk-distribution.md#pin-and-prepare-an-archive-download) remains available: add the prepared directory containing `mdrun_sdk/__init__.py` to the worker's import path. Both assets contain the maintained SDK and license, with no application adapter or tests. Keep the independent cold entrypoint SDK-free.
 
 ## Implement an adapter
 
