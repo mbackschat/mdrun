@@ -97,35 +97,39 @@ fn observe(pid: i32) -> io::Result<Option<Process>> {
             }
             Err(error) => return Err(error),
         };
-        let invalid = || io::Error::other("invalid custody fixture process status");
-        let end = stat
-            .iter()
-            .rposition(|byte| *byte == b')')
-            .ok_or_else(invalid)?;
-        let fields: Vec<_> = stat[end + 1..]
-            .split(|byte| byte.is_ascii_whitespace())
-            .filter(|field| !field.is_empty())
-            .collect();
-        let number = |index| -> io::Result<i32> {
-            std::str::from_utf8(fields.get(index).ok_or_else(invalid)?)
-                .map_err(|_| invalid())?
-                .parse()
-                .map_err(|_| invalid())
-        };
-        Ok(Some(Process {
-            pid,
-            parent: number(1)?,
-            group: number(2)?,
-            identity: std::str::from_utf8(fields.get(19).ok_or_else(invalid)?)
-                .map_err(|_| invalid())?
-                .to_owned(),
-            state: match *fields.first().ok_or_else(invalid)? {
-                b"T" | b"t" => State::Stopped,
-                b"Z" | b"X" | b"x" => State::Zombie,
-                _ => State::Live,
-            },
-        }))
+        parse_linux_stat(pid, &stat).map(Some)
     }
+}
+
+fn parse_linux_stat(pid: i32, stat: &[u8]) -> io::Result<Process> {
+    let invalid = || io::Error::other("invalid custody fixture process status");
+    let end = stat
+        .iter()
+        .rposition(|byte| *byte == b')')
+        .ok_or_else(invalid)?;
+    let fields: Vec<_> = stat[end + 1..]
+        .split(|byte| byte.is_ascii_whitespace())
+        .filter(|field| !field.is_empty())
+        .collect();
+    let number = |index: usize| -> io::Result<i32> {
+        std::str::from_utf8(fields.get(index).ok_or_else(invalid)?)
+            .map_err(|_| invalid())?
+            .parse()
+            .map_err(|_| invalid())
+    };
+    Ok(Process {
+        pid,
+        parent: number(1)?,
+        group: number(2)?,
+        identity: std::str::from_utf8(fields.get(19).ok_or_else(invalid)?)
+            .map_err(|_| invalid())?
+            .to_owned(),
+        state: match *fields.first().ok_or_else(invalid)? {
+            b"T" | b"t" => State::Stopped,
+            b"Z" | b"X" | b"x" => State::Zombie,
+            _ => State::Live,
+        },
+    })
 }
 
 struct OwnedLeaf(Child);
@@ -862,4 +866,26 @@ fn a_failed_payload_spawn_releases_custody_after_observing_the_empty_group() {
     assert_eq!(controller.receive(), json!({"kind":"stopped","clean":true}));
     assert!(!controller.child.wait().unwrap().success());
     assert!(!excluded(address));
+}
+
+#[test]
+fn linux_fixture_status_retains_parent_group_birth_and_native_comm_bytes() {
+    let observed = parse_linux_stat(
+        42,
+        b"42 (native ) name-\xff) T 41 99 77 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 12345\n",
+    )
+    .unwrap();
+    assert_eq!(
+        (observed.pid, observed.parent, observed.group),
+        (42, 41, 99)
+    );
+    assert_eq!(observed.identity, "12345");
+    assert_eq!(observed.state, State::Stopped);
+    for truncated in [
+        b"42 no terminator".as_slice(),
+        b"42 (name) T 41",
+        b"42 (name) T not-a-parent 99",
+    ] {
+        assert!(parse_linux_stat(42, truncated).is_err());
+    }
 }
