@@ -1,14 +1,26 @@
 # Product contract
 
-**mdrun — Create, run, and verify executable Markdown documents.**
+mdrun turns Markdown examples into repeatable checks and lets cooperative applications reuse startup across calls. This document defines the behavior users and integrations can rely on. For a working first example, use the [README](../README.md); for component design, use the [architecture guide](architecture.md).
 
-Status: document CLI, discovery and cooperative execution qualified on macOS/Linux, 2026-11-16. The public version-1 session and SDK contract is frozen for the 0.1.0 release candidate; final artifact qualification remains open and publication is held. Implemented behavior and its required guarantees are described below. The useful source conclusions are recorded in [research provenance](research/README.md) and the [execution plan](plans/execution.md).
+The 0.1.0 candidate's document CLI, discovery, managed execution, native packages and SDK artifacts have macOS/Linux pre-release qualification. The public version-1 session and SDK contract is frozen; publication remains held. The [implementation plan](PLAN.md) owns exact-revision evidence and remaining publication gates. Qualification of mdrun does not establish safe reuse or cold/warm parity for an arbitrary application.
 
 ## Implemented behavior
 
-The Rust executable implements `init`, `note`, `exec`, `image`, `pop`, `verify` and `extract` with ordinary cold process execution. It supports stdin text/code/image inputs, merged stdout/stderr recording and command exit status, working-directory selection, copied images, replay/diffs and updated output, extraction and remote form/multipart delivery. New documents use mdrun provenance; untouched legacy source and metadata are retained. Explicitly choosing the input as `verify --output` updates that file; ordinary verification is read-only.
+Ordinary execution starts a process for each command. A managed session can instead forward eligible calls to an application worker that remains alive. The host is a standalone Rust executable; invoked commands and workers still need their own interpreters and runtimes.
 
-Clap owns all parsing, help and version output. Normal informational requests exit 0; invalid or missing arguments exit 2; document/verification failures exit 1. `exec` returns the child status (255 for signal termination on qualified Unix behavior). `list` and `preview` provide the discovery behavior below. `guide` embeds the maintained document/session/reference guides, and generated man pages share the public clap definitions. Native sessions and the Node, JVM and Python SDKs implement the frozen [version-1 contract](plans/session-protocol.md); this candidate qualification does not establish parity or safe reuse for an arbitrary application. Compiled Rust libraries do not require an installed language runtime or Showboat for host operation; invoked programs still need their own interpreters.
+| Task | Commands and behavior |
+| --- | --- |
+| Author a demonstration | `init`, `note`, `exec`, `image` and `pop` create and edit Markdown, capture combined stdout/stderr, include copied images and undo the last entry. Text, code and image inputs can come from stdin. |
+| Check or update results | `verify` replays commands and compares captures. Ordinary verification leaves the input document unchanged; `--output` writes updated captures, including in place when the input path is explicitly selected. |
+| Recreate authoring steps | `extract` emits shell commands that reconstruct a document. |
+| Inspect commands | `list` inventories executable blocks; `preview` returns original fenced source without execution. Their precise contracts are below. |
+| Reuse application startup | Native sessions and the Node, JVM and Python SDKs implement the [version-1 execution contract](plans/session-protocol.md). Application adapters establish eligibility and cleanup. |
+| Read help offline | `guide` embeds maintained task guides; generated man pages and CLI help share the public clap definitions. |
+| Deliver recordings remotely | Configured remote delivery uses form/multipart requests. The [reference](guides/reference.md) owns delivery and failure behavior. |
+
+New documents identify mdrun. Editing preserves untouched legacy source and metadata. Working-directory selection, command exit statuses, image alt text and extraction quoting are part of the document contract, detailed below and in the [document guide](guides/documents.md).
+
+Clap owns parsing, help and version output. Informational requests exit 0; invalid or missing arguments exit 2; document/verification failures exit 1. `exec` returns the child status, with 255 for signal termination on qualified Unix behavior. No installed Showboat or language runtime is required to start the host; its compiled Rust dependencies supply the host functionality.
 
 ## Required document behavior
 

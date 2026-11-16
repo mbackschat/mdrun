@@ -1,13 +1,15 @@
-"""An ordinary SDK-free word-count CLI, also callable by the warm adapter."""
+"""An SDK-free stdin word counter, also callable by the warm adapter."""
 
 import argparse
-from pathlib import Path
 import sys
 
 
-def count_file(path: Path, stdout, stderr) -> int:
+def count_stdin(stdin, stdout, stderr) -> int:
     try:
-        text = path.read_text(encoding="utf-8")
+        data = bytearray()
+        while chunk := stdin.read(65536):
+            data.extend(chunk)
+        text = data.decode("utf-8")
     except (OSError, UnicodeError) as error:
         stderr.write(f"wordcount: {error}\n".encode("utf-8"))
         return 1
@@ -16,10 +18,9 @@ def count_file(path: Path, stdout, stderr) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Count lines and words in a UTF-8 file.")
-    parser.add_argument("file", type=Path)
-    args = parser.parse_args()
-    return count_file(args.file, sys.stdout.buffer, sys.stderr.buffer)
+    parser = argparse.ArgumentParser(description="Count lines and words from UTF-8 stdin.")
+    parser.parse_args()
+    return count_stdin(sys.stdin.buffer, sys.stdout.buffer, sys.stderr.buffer)
 
 
 if __name__ == "__main__":

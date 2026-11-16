@@ -35,8 +35,6 @@ def check(directory: Path, report_path: Path, mode: str) -> None:
         document = (directory / name).read_text(encoding="utf-8")
         require(re.findall(r"```output\n(.*?)```", document, re.DOTALL) == captures,
                 f"{name} output differs from the literal oracle")
-    require((directory / "first.txt").read_bytes() == b"red green blue gold silver\n" and
-            (directory / "second.txt").read_bytes() == b"one two\n", "unexpected final input contents")
     artifact = json.loads((directory / "binding.json").read_text(encoding="utf-8"))["artifact_id"]
     report = json.loads(report_path.read_text(encoding="utf-8"))
     if mode == "batch":

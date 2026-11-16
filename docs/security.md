@@ -1,16 +1,35 @@
 # Dependency and repository security
 
-The owner adopted this policy on 2026-11-16: routine Rust dependencies must be stable, non-yanked releases published at least 14 days before adoption, including every resolved transitive dependency. Security alerts and security-fix pull requests remain immediate. Security updates require review and are never automatically merged.
+Review a dependency change before compiling it: Rust build scripts and procedural macros can execute during tooling as well as during a normal build. This page gives maintainers the adoption checks, the narrow exception for an urgent security fix, and the repository controls that detect known vulnerabilities and leaked credentials.
+
+The owner adopted the policy on 2026-11-16. Routine Rust dependencies must be stable, non-yanked releases published at least 14 days before adoption, including every resolved transitive dependency. Security alerts and security-fix pull requests remain immediate. Every security update requires review; none is automatically merged.
 
 ## Dependency quarantine
 
-Run `python3 scripts/dependency_policy.py` before compiling new or updated dependencies. The standard-library-only [guard](../scripts/dependency_policy.py) checks every registry version in [Cargo.lock](../Cargo.lock) against crates.io publication dates and yank status, rejects prereleases and unreviewed dependency sources, and fails if registry evidence cannot be obtained. CI, release builds and Rust CodeQL extraction run it before dependency build code can execute.
+For a new or updated Rust dependency, run the standard-library-only [policy guard](../scripts/dependency_policy.py) before compiling any dependency code:
 
-[Dependabot](../.github/dependabot.yml) checks Cargo, GitHub Actions and the JVM SDK's Maven manifest weekly. Cargo updates include direct and transitive dependencies; Cargo and Maven version updates use a 14-day cooldown. GitHub documents that [cooldown applies to version updates, not security updates](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#cooldown). It does not replace auditing the complete resolved lockfile: dependency resolution and security updates can introduce versions beyond the update being proposed. JVM updates also require an explicitly reviewed matching [SDK lock](../sdk/jvm/dependencies.lock.json); a POM-only update fails preparation before compilation.
+```sh
+python3 scripts/dependency_policy.py
+```
 
-For a verified security fix that cannot wait for quarantine, record an exception for the exact crate and version in [dependency-exceptions.json](../.github/dependency-exceptions.json), including the advisory URL, rationale, reviewed upstream change URL, relevant test evidence and expiry date. Review affected versions and the upstream fix before accepting the exception; use the applicable checks before merging. Exceptions waive only the age threshold, never prerelease or yank checks. Do not add a blanket exemption for security pull requests or ignore a vulnerability merely to pass a check. Remove expired or superseded exceptions.
+The guard checks every registry version in [Cargo.lock](../Cargo.lock) against crates.io publication dates and yank status. It rejects prereleases and unreviewed dependency sources, and fails if registry evidence cannot be obtained. CI, release builds and Rust CodeQL extraction run it before dependency build code can execute. A version proposed by an update tool still needs this complete-lockfile check: dependency resolution and security fixes can introduce versions beyond the update being proposed.
+
+[Dependabot](../.github/dependabot.yml) checks Cargo, GitHub Actions and the JVM SDK's Maven manifest weekly. Cargo updates cover direct and transitive dependencies. Cargo and Maven version updates use a 14-day cooldown; GitHub documents that [cooldown applies to version updates, not security updates](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#cooldown). The cooldown does not replace the guard. A JVM update also needs an explicitly reviewed matching [SDK lock](../sdk/jvm/dependencies.lock.json); a POM-only update fails preparation before compilation.
+
+### Review an urgent security-fix exception
+
+If a verified security fix cannot wait for quarantine, use an exact crate-and-version exception in [dependency-exceptions.json](../.github/dependency-exceptions.json):
+
+1. Review the advisory's affected versions and the upstream fix.
+2. Record the advisory URL, rationale, reviewed upstream change URL, relevant test evidence and expiry date.
+3. Run the applicable checks before merging.
+4. Remove the exception when it expires or is superseded.
+
+An exception waives only the age threshold. Prerelease and yank checks still apply. Do not exempt security pull requests as a class or ignore a vulnerability to pass a check. The [dependency inventory](dependencies.md) records the adopted libraries and their evidence; [distribution](distribution.md#regenerate-crate-notices-after-dependency-changes) covers the associated notice update.
 
 ## Automated checks
+
+Use these controls together: each detects a different class of problem and has a narrower boundary than a general safety guarantee.
 
 | Control | Coverage and boundary |
 | --- | --- |
@@ -19,10 +38,19 @@ For a verified security fix that cannot wait for quarantine, record an exception
 | Dependabot alerts and security updates | Alerts on known vulnerabilities in the repository dependency graph and proposes fixes immediately, including outside the weekly version-update schedule. |
 | Secret scanning and push protection | Detects supported secret patterns and blocks matching pushes; rotate a leaked credential when an alert identifies it. |
 
-The workflow files configure checks; passing hosted runs establish that they actually execute. Require the dependency-review check in repository branch protection if it must block merges. No automatic merge rule is configured here.
+Workflow files configure checks; passing hosted runs establish that they actually execute. Require the dependency-review check in repository branch protection if it must block merges. No automatic merge rule is configured here.
 
 ## Repository settings
 
-Repository administrators manage these controls under **Settings → Advanced Security**. Keep the dependency graph, Dependabot alerts, Dependabot security updates, secret scanning and push protection enabled. Use the committed CodeQL workflow as advanced setup; do not configure a duplicate default CodeQL setup.
+Repository administrators enable the account-side controls under **Settings → Advanced Security**. Keep the dependency graph, Dependabot alerts, Dependabot security updates, secret scanning and push protection enabled. Use the committed CodeQL workflow as advanced setup; do not configure a duplicate default CodeQL setup.
 
-For automation, GitHub's [repository API](https://docs.github.com/en/rest/repos/repos) enables dependency alerts and the graph with `PUT /repos/{owner}/{repo}/vulnerability-alerts`, and security-fix pull requests with `PUT /repos/{owner}/{repo}/automated-security-fixes`. `PATCH /repos/{owner}/{repo}` accepts `security_and_analysis.secret_scanning.status` and `security_and_analysis.secret_scanning_push_protection.status` as `enabled`. Read the settings back after changes; configuration files alone do not enable those repository controls.
+For automation, use GitHub's [repository API](https://docs.github.com/en/rest/repos/repos):
+
+| Control | Request |
+| --- | --- |
+| Dependency alerts and graph | `PUT /repos/{owner}/{repo}/vulnerability-alerts` |
+| Security-fix pull requests | `PUT /repos/{owner}/{repo}/automated-security-fixes` |
+| Secret scanning | `PATCH /repos/{owner}/{repo}` with `security_and_analysis.secret_scanning.status` set to `enabled` |
+| Secret-scanning push protection | `PATCH /repos/{owner}/{repo}` with `security_and_analysis.secret_scanning_push_protection.status` set to `enabled` |
+
+Read settings back after changes. Committed configuration files alone do not enable these repository controls.

@@ -99,33 +99,7 @@ jobs:
       - run: cargo build --release --locked
       - name: Run the README warm and batch demos
         timeout-minutes: 1
-        run: |
-          MDRUN_DEMO_BIN="$PWD/target/release/mdrun"
-          MDRUN_DEMO_DIR="$RUNNER_TEMP/readme-warm-demo"
-          python3 examples/warm-python/prepare.py --output "$MDRUN_DEMO_DIR"
-          "$MDRUN_DEMO_BIN" --workdir "$MDRUN_DEMO_DIR" session \
-            --binding "$MDRUN_DEMO_DIR/binding.json" --require-warm \
-            --report "$MDRUN_DEMO_DIR/warm.json" \
-            -- sh "$MDRUN_DEMO_DIR/author.sh" "$MDRUN_DEMO_BIN"
-          python3 examples/warm-python/check.py --directory "$MDRUN_DEMO_DIR" \
-            --report "$MDRUN_DEMO_DIR/warm.json" --mode fast
-          "$MDRUN_DEMO_BIN" --workdir "$MDRUN_DEMO_DIR" session \
-            --binding "$MDRUN_DEMO_DIR/binding.json" --mode cold \
-            --report "$MDRUN_DEMO_DIR/cold.json" \
-            -- sh -c '"$1" verify first.md && "$1" verify second.md' sh "$MDRUN_DEMO_BIN"
-          python3 examples/warm-python/check.py --directory "$MDRUN_DEMO_DIR" \
-            --report "$MDRUN_DEMO_DIR/cold.json" --mode cold
-          if python3 examples/warm-python/check.py --directory "$MDRUN_DEMO_DIR" \
-            --report "$MDRUN_DEMO_DIR/cold.json" --mode fast; then
-            echo "The warm demo checker accepted cold execution" >&2
-            exit 1
-          fi
-          "$MDRUN_DEMO_BIN" --workdir "$MDRUN_DEMO_DIR" verify-many \
-            --binding "$MDRUN_DEMO_DIR/binding.json" --require-warm --jobs 2 \
-            --report "$MDRUN_DEMO_DIR/batch.json" \
-            "$MDRUN_DEMO_DIR/first.md" "$MDRUN_DEMO_DIR/second.md"
-          python3 examples/warm-python/check.py --directory "$MDRUN_DEMO_DIR" \
-            --report "$MDRUN_DEMO_DIR/batch.json" --mode batch
+        run: python3 examples/warm-python/run.py --mdrun "$PWD/target/release/mdrun" --output "$RUNNER_TEMP/readme-warm-demo"
       - name: Qualify bounded Node streaming with stalled readers
         timeout-minutes: 1
         run: |

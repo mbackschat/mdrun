@@ -30,7 +30,7 @@ def prepare(output: Path) -> None:
         "name": "wordcount",
         "worker_argv": [python, "-I", "-S", "-B", str(output / "worker.py")],
         "cold_argv": [python, "-I", "-S", "-B", str(output / "application.py")],
-        # Only file contents and argv affect this application's eligible behavior.
+        # Eligible calls depend only on UTF-8 stdin, not shell bookkeeping variables.
         "warm_ignore_env": ["SHLVL", "_"],
         "context": {"environment": {"LC_ALL": "C", "LANG": "C", "PWD": str(output), "OLDPWD": None}},
     }

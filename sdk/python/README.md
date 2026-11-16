@@ -1,16 +1,22 @@
 # Python worker SDK — version 1
 
-This dependency-free package implements the frozen [version-1 session contract](../../docs/plans/session-protocol.md) for one cooperative application in a dedicated Python process. The documented API is frozen for the 0.1.0 release candidate; publication is held, and the [execution checklist](../../docs/plans/execution.md) records runtime evidence and remaining artifact checks. The native Rust host remains standalone; Python is required only for a separately launched Python worker. Registry publication remains deferred, and each application still requires its own parity and resource qualification; the SDK does not establish arbitrary Python state/resource cleanup.
+Use this SDK to call a Python application repeatedly from executable Markdown while retaining its imports and reusable initialization in one worker. You write an adapter around callable application code; mdrun sends eligible commands to that adapter within a managed session.
+
+When ordinary `mdrun verify` executes a Markdown block containing `python /absolute/path/to/cli.py hello`, that call starts a new interpreter, imports modules and initializes the application. Repeated calls repeat that setup. `cli.py` here means your existing program, not a supplied mdrun file. A warm worker starts the interpreter once and keeps the application instance returned by your factory. Every invocation still runs the command and reads current inputs; output is not cached. This requires an application that can safely finish one request and begin another.
+
+You supply the normal CLI, the adapter and a binding JSON file connecting their launchers. The SDK supplies the worker transport, invocation streams and callback lifecycle. The standalone Rust host manages the session and process custody; Python is required only for the separately launched Python worker.
 
 ## Prepare the SDK
 
-Use the [versioned SDK distribution guide](../../docs/sdk-distribution.md#install-the-python-sdk-with-uv) to install the standard `mdrun_sdk-VERSION-py3-none-any.whl` GitHub release asset into your application virtual environment with `uv pip install`. Pin its exact versioned URL and SHA-256 in the same requirements file locally and in CI; a verified local wheel works too. The distribution is named `mdrun-sdk` and provides `mdrun_sdk` for Python 3.12 or later, with no external dependencies or CLI entrypoint. Start the worker with that virtual environment's Python. The standalone Rust host is installed separately, and PyPI publication remains deferred.
+Use the [versioned SDK distribution guide](../../docs/sdk-distribution.md#install-the-python-sdk-with-uv) to install the standard `mdrun_sdk-VERSION-py3-none-any.whl` GitHub release asset into your application virtual environment with `uv pip install`. Pin its exact versioned URL and SHA-256 in the same requirements file locally and in CI; a verified local wheel works too. The distribution is named `mdrun-sdk` and provides `mdrun_sdk` for Python 3.12 or later, with no external dependencies or CLI entrypoint. Start the worker with that virtual environment's Python. Install the standalone Rust host separately. No product version has been published and publication is held; the distribution guide also covers verified local wheels. PyPI publication remains deferred.
 
 The [archive preparation route](../../docs/sdk-distribution.md#pin-and-prepare-an-archive-download) remains available: add the prepared directory containing `mdrun_sdk/__init__.py` to the worker's import path. Both assets contain the maintained SDK and license, with no application adapter or tests. Keep the independent cold entrypoint SDK-free.
 
 ## Implement an adapter
 
-Make `mdrun_sdk` from this directory available to the prepared worker's Python import path. The host appends one private configuration-file path to `worker_argv`. Use `argparse` for bootstrap arguments and pass the path to `run_worker`; keep its contents and credentials out of application output.
+Save the following as `hello_worker.py` in your application project. You create this file; its `Greeting` class contains the complete example command. A real adapter would call your existing application implementation and initialize reusable resources in its constructor or factory.
+
+The worker's interpreter must be able to import `mdrun_sdk`, through your virtual environment or the prepared archive directory. The host appends one private configuration-file path to `worker_argv`. The bootstrap uses `argparse` to accept that path and passes it to `run_worker`; keep its contents and credentials out of application output. Do not launch this file as a normal command or create that private configuration yourself.
 
 ```python
 import argparse
@@ -39,7 +45,15 @@ except BaseException:
     raise SystemExit(70)
 ```
 
-The empty reset is justified only by this stateless, synchronous example. Real adapters must stop and check application-owned work and resources, reread mutable inputs and qualify failure-then-success behavior against independently launched packaged execution. Classify handlers needing unqualified process-global streams, terminal behavior or native-extension state as cold before invocation.
+For each accepted `hello` call, the example writes the bytes `hello\n` to request stdout and returns status `0`; subsequent calls run the handler again in the same worker. The empty reset is justified only by this stateless, synchronous example. Real adapters must stop and check application-owned work and resources, reread mutable inputs and qualify failure-then-success behavior against independently launched packaged execution. Classify handlers needing unqualified process-global streams, terminal behavior or native-extension state as cold before invocation.
+
+## Connect it to a session
+
+Create a [binding](../../docs/guides/sessions.md#what-you-prepare) whose `worker_argv` contains the absolute Python interpreter from your prepared environment followed by the absolute path to `hello_worker.py`. Set `cold_argv` to your independent normal CLI, with its usual interpreter and dependencies. Its `hello` command must produce the same bytes and status without importing the SDK. mdrun does not create either application launcher; it appends the private worker configuration path at startup.
+
+Follow [managed-session verification](../../docs/guides/sessions.md#verify-and-inspect-the-route) to route repeated document commands through the binding. Eligible calls with a compatible context reuse the worker; a refusal can select the cold launcher before acceptance, while `--require-warm` fails a call that cannot go warm. Compare cold and warm bytes, statuses and relevant file effects, then check routing, worker starts and cleanup in the report. To try a complete supplied application first, use the [runnable Python walkthrough](../../docs/examples/warm-python.md).
+
+## Callback contract
 
 `run_worker(config_path, factory)` permits one worker lifetime per process, including failed startup. Its three persistent SDK threads have started before the factory runs. The factory, classification, invocation, reset and close callbacks all use the same persistent execution thread, allowing the factory to establish a stable resource baseline. Imports do not install process hooks.
 
@@ -71,6 +85,10 @@ Python's [threading API](https://docs.python.org/3/library/threading.html) provi
 Reset is an explicit application attestation. The SDK does not restore arbitrary modules, globals, context variables, threads, children, signal handlers, native extensions or external resources. Detached work that never calls the SDK can escape its stream guards. Applications must own and inspect that work; this foundation provides no automatic script reset or general Python cleanup guarantee.
 
 The [owned-thread example](examples/owned_thread.py) shows this boundary for one known cooperative thread and stop event. `owned_joined` stops and joins its work before reset; `owned_live` deliberately leaves work running so reset rejects reuse. Expiry is also a failure, even after the thread exits. `close` stops and joins only the application's stored handle, without enumerating or joining unrelated threads. Reset requires that this handle has been cleared by explicit joining; a dead but unjoined handle cannot establish successful cleanup. Real adapters must choose cancellation and deadlines appropriate to their work.
+
+## Qualification and evidence
+
+The dependency-free package follows the frozen [version-1 session contract](../../docs/plans/session-protocol.md) for the 0.1.0 release candidate. The [execution checklist](../../docs/plans/execution.md) records runtime evidence and artifact checks. Registry publication remains deferred. Each application still requires its own parity and resource qualification; the SDK does not establish arbitrary Python state/resource cleanup.
 
 The lifecycle controls require successful reset and reuse after joined work, and failure before completion for retained or expired work. Separate controls distinguish an application return status from `SystemExit(0)` and `os._exit(0)`: the former faults the callback; the latter loses the worker without a completion message. After either accepted invocation, the native host must fail the session without cold retry, even though the independently launched cold program exits successfully. One durable warm marker and no cold marker guard this distinction. All 20 local peer tests and seven native-host entries pass; macOS/Linux CI (historical run) also passes them at `6804d3d`.
 

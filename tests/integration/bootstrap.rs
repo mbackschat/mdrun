@@ -236,7 +236,14 @@ fn root_help_recipe_records_literal_output_and_replays_without_edits() {
 fn readme_recipe_and_recording_match_then_expose_changed_output_without_editing_input() {
     let fixture = Fixture::new();
     let readme = include_str!("../../README.md");
-    let recipe = readme
+    let recording = readme
+        .split_once("## Record your first demonstration\n")
+        .expect("README must retain the first-recording walkthrough")
+        .1
+        .split("\n## ")
+        .next()
+        .unwrap();
+    let recipe = recording
         .split_once("```sh\n")
         .unwrap()
         .1
@@ -258,7 +265,7 @@ fn readme_recipe_and_recording_match_then_expose_changed_output_without_editing_
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(output.stdout, b"hello from mdrun\n");
-    let excerpt = readme
+    let excerpt = recording
         .split_once("````markdown\n")
         .unwrap()
         .1
@@ -266,9 +273,16 @@ fn readme_recipe_and_recording_match_then_expose_changed_output_without_editing_
         .unwrap()
         .0;
     let recorded = fs::read_to_string(fixture.0.join("demo.md")).unwrap();
-    assert!(recorded.contains(excerpt));
     let retained = include_str!("../../docs/examples/greeting.md");
-    assert!(retained.contains(excerpt));
+    assert_eq!(excerpt, retained, "README must show the complete recording");
+    let (recorded_title, recorded_rest) = recorded.split_once("\n\n").unwrap();
+    let (retained_title, retained_rest) = retained.split_once("\n\n").unwrap();
+    assert_eq!(recorded_title, retained_title);
+    // Each init generates its own timestamp and ID; compare all authored content.
+    assert_eq!(
+        recorded_rest.split_once("\n\n").unwrap().1,
+        retained_rest.split_once("\n\n").unwrap().1
+    );
     fs::write(fixture.0.join("retained.md"), retained).unwrap();
     assert!(fixture.run(&["verify", "retained.md"]).status.success());
 
