@@ -1,5 +1,6 @@
 mod app;
 mod cli;
+mod discovery;
 mod document;
 mod remote;
 

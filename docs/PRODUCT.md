@@ -2,13 +2,13 @@
 
 **mdrun — Create, run, and verify executable Markdown documents.**
 
-Status: document CLI implementation, 2026-11-16; qualification in progress. The current executable contract is described in the next section. Remaining sections are accepted requirements for implementation, not claims of supported behavior. The useful source conclusions are recorded in [research provenance](research/README.md) and the [execution plan](plans/execution.md).
+Status: document CLI qualified on macOS/Linux, 2026-11-16; discovery passes local checks, with hosted qualification pending. Implemented behavior is described below; required execution behavior remains an accepted implementation goal. The useful source conclusions are recorded in [research provenance](research/README.md) and the [execution plan](plans/execution.md).
 
 ## Implemented behavior
 
 The Rust executable implements `init`, `note`, `exec`, `image`, `pop`, `verify` and `extract` with ordinary cold process execution. It supports stdin text/code/image inputs, merged stdout/stderr recording and command exit status, working-directory selection, copied images, replay/diffs and updated output, extraction and remote form/multipart delivery. New documents use mdrun provenance; untouched legacy source and metadata are retained. Explicitly choosing the input as `verify --output` updates that file; ordinary verification is read-only.
 
-Clap owns all parsing, help and version output. Normal informational requests exit 0; invalid or missing arguments exit 2; document/verification failures exit 1. `exec` returns the child status (255 for signal termination on qualified Unix behavior). No worker/session/discovery feature is implemented yet. Compiled Rust libraries do not require an installed language runtime or Showboat for host operation; invoked programs still need their own interpreters.
+Clap owns all parsing, help and version output. Normal informational requests exit 0; invalid or missing arguments exit 2; document/verification failures exit 1. `exec` returns the child status (255 for signal termination on qualified Unix behavior). `list` and `preview` provide the discovery behavior below. No worker/session feature is implemented yet. Compiled Rust libraries do not require an installed language runtime or Showboat for host operation; invoked programs still need their own interpreters.
 
 ## Required document behavior
 
@@ -16,9 +16,11 @@ Retain Showboat’s seven document commands, familiar options, document format a
 
 Required commands are `init`, `note`, `exec`, `image`, `pop`, `verify` and `extract`. Required behavior includes stdin inputs, command failures, interpreter selection, working directories, captured output, image copying/alt text, exact replay and diffs, updated-copy output, extraction/quoting, timestamps/IDs, help/version/options and remote streaming. Recording and verification must operate without an installed Showboat executable; upstream is a test oracle only.
 
-## Required discovery behavior
+## Discovery behavior
 
-Accepted on 2026-11-16 for implementation after M2: list recognized executable blocks, filter by plain text across file/heading/command text, emit a machine-readable JSON inventory, and preview one block's complete source without executing it. Reuse replay's block recognition and include existing unnamed Showboat blocks. Entries identify the file, block position, available heading, interpreter and command summary; positions locate blocks in the current document and are not persistent IDs. Preview performs no shell evaluation, variable expansion or worker startup. CLI spelling remains undecided.
+`list FILE... [--filter TEXT] [--json]` lists replay-recognized executable blocks in file/block order, including existing unnamed Showboat commands and commands without recorded output. It excludes image and output blocks. Entries identify the file, zero-based parsed-block index, one-based opening-fence line, nearest preceding title/ATX heading, interpreter and first command line. The filter is a case-sensitive literal substring across filename, heading and complete command text. Positions locate blocks in the current document and are not persistent IDs. Setext headings are not interpreted.
+
+JSON is an array of objects with `file`, `block`, `line`, `heading`, `interpreter` and `summary`; heading is null when absent. Inventory requires UTF-8 paths, headings, interpreters and command text and reports invalid text without emitting a partial inventory. Plain output escapes control characters so each entry occupies one row. `preview FILE BLOCK` emits the complete original fenced source span, preserving arbitrary bytes and line endings, and rejects missing or non-executable blocks. It uses replay's parser and performs no shell evaluation, variable expansion, stdin consumption or worker startup.
 
 Selection initially operates on whole documents. Names, tag metadata, interactive pickers and partial block execution are [deferred](DEFERRED.md); discovery does not require rewriting the existing corpus or introducing dependencies between blocks.
 

@@ -5,6 +5,7 @@ These libraries address demonstrated document-CLI needs; they were not inherited
 | Direct library | Adopted version and publication date | Purpose |
 | --- | --- | --- |
 | clap | 4.6.7, 2026-09-14 | Standard argument parsing, help, version and diagnostics; handwritten CLI parsing is explicitly excluded |
+| serde_json | 1.0.154, 2026-10-11 | Correct JSON inventory encoding, including escaped text; avoids a custom JSON serializer |
 | time | 0.3.55, 2026-08-01 | UTC timestamp/date construction and RFC3339 output without an external date executable |
 | uuid | 1.29.0, 2026-10-23 | Random v4 document identities and copied-image names |
 | ureq | 3.5.0, 2026-10-21 | Native HTTP/TLS delivery; rustls enabled, unrelated compression/cookie/JSON features excluded |

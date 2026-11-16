@@ -1,6 +1,6 @@
 # Documentation
 
-Current status: document CLI implementation, 2026-11-16; qualification in progress. Warm runtime sessions and discovery remain planned. Current documents below govern work; the research index maps the extracted conclusions to their maintained owners.
+Current status: document CLI qualified on macOS/Linux, 2026-11-16; read-only discovery passes local checks, with hosted qualification pending. Warm runtime sessions remain planned. Current documents below govern work; the research index maps the extracted conclusions to their maintained owners.
 
 | Document | Owns |
 | --- | --- |

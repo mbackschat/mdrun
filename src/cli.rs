@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Create, run, and verify executable Markdown documents.
 ///
@@ -79,26 +79,34 @@ pub enum Command {
         #[arg(long, value_name = "NAME")]
         filename: Option<OsString>,
     },
-}
 
-impl Command {
-    pub fn file(&self) -> &Path {
-        match self {
-            Self::Init { file, .. }
-            | Self::Note { file, .. }
-            | Self::Exec { file, .. }
-            | Self::Image { file, .. }
-            | Self::Pop { file }
-            | Self::Verify { file, .. }
-            | Self::Extract { file, .. } => file,
-        }
-    }
+    /// List executable blocks without running commands.
+    List {
+        /// Documents to inspect, in inventory order.
+        #[arg(required = true, num_args = 1.., value_name = "FILE")]
+        files: Vec<PathBuf>,
+        /// Case-sensitive literal substring of file, heading, or complete command text.
+        #[arg(long, value_name = "TEXT")]
+        filter: Option<String>,
+        /// Emit a JSON array instead of readable inventory rows.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Print one executable block's complete fenced source without running it.
+    Preview {
+        /// Document to inspect.
+        file: PathBuf,
+        /// Zero-based parsed-block index, identical to verify's block positions.
+        block: usize,
+    },
 }
 
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use std::os::unix::ffi::OsStringExt;
+    use std::path::Path;
 
     #[test]
     fn native_paths_interpreters_and_code_keep_their_original_bytes() {
@@ -117,8 +125,8 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(cli.workdir.unwrap(), PathBuf::from(workdir));
-        assert_eq!(cli.command.file(), Path::new(&file));
         let Command::Exec {
+            file: actual_file,
             lang: actual_lang,
             code: actual_code,
             ..
@@ -126,6 +134,7 @@ mod tests {
         else {
             panic!("expected exec command");
         };
+        assert_eq!(actual_file.as_path(), Path::new(&file));
         assert_eq!(actual_lang, lang);
         assert_eq!(actual_code, Some(code));
     }

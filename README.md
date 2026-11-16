@@ -10,7 +10,7 @@
 
 Inspired by [Showboat](https://github.com/simonw/showboat), created by Simon Willison. Showboat established the workflow this project builds on: executable Markdown combining prose, commands and captured output, with replay to verify the results. Credit for that original idea and command model belongs to Showboat and its contributors.
 
-Current status: the seven document commands are implemented with cold execution; qualification is in progress. Command discovery and warm runtime sessions remain planned. The extracted feasibility conclusions guide implementation and do not establish production lifecycle guarantees.
+Current status: the seven document commands and read-only command discovery are implemented with cold execution; qualification is in progress. Warm runtime sessions remain planned. The extracted feasibility conclusions guide implementation and do not establish production lifecycle guarantees.
 
 ## Why a new implementation?
 
@@ -37,6 +37,18 @@ mdrun extract demo.md --filename rebuilt.md
 `note`, `exec` and `image` accept stdin when their text/code/image argument is omitted. `exec` records combined stdout/stderr even when the command fails and returns its exit status. `verify --output candidate.md` writes updated captures to a separate candidate; selecting the input path explicitly updates it in place. `pop` removes the final note or command/output pair. Use `--workdir DIR` for the executed program's directory. See `mdrun help COMMAND` for command options; use `--` before literal positional values beginning with a hyphen.
 
 Legacy Showboat provenance remains intact; new documents identify mdrun. `SHOWBOAT_REMOTE_URL` supports compatible section/image HTTP delivery; delivery failures warn without discarding the local recording. Tests compare meaningful document/execution behavior with pinned Showboat, while clap's normal help and validation have independent tests.
+
+## Find and preview commands
+
+```sh
+mdrun list demo.md
+mdrun list demo.md another.md --filter hello --json
+mdrun preview demo.md 2
+```
+
+`list` includes every executable block recognized by replay, including unnamed commands without recorded output. It excludes output and image blocks. `--filter` matches a case-sensitive literal substring in the filename, nearest preceding title/ATX heading or complete command text. Plain rows show file/line, block index, heading, interpreter and the command's first line. JSON is an array with `file`, `block`, `line`, `heading` (null when absent), `interpreter` and `summary`; it requires UTF-8 inventory text and emits nothing if any input fails.
+
+`preview` writes the selected block's complete fenced source verbatim, including original line endings and arbitrary bytes. Its zero-based block index is the same index reported by `verify`, not a permanent ID or executable-only ordinal. Both commands inspect documents without executing code, expanding shell syntax or starting workers. Names, tags and selective block execution remain deferred.
 
 ## Distribution
 

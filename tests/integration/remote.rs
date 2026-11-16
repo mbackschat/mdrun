@@ -220,6 +220,10 @@ fn unanswered_request_times_out_after_ten_seconds_without_discarding_local_effec
         elapsed >= Duration::from_secs(9),
         "remote delivery returned before the ten-second timeout: {elapsed:?}"
     );
+    assert!(
+        elapsed < Duration::from_secs(15),
+        "remote delivery exceeded the timeout tolerance: {elapsed:?}"
+    );
     let warning = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
     assert!(
         warning.contains("timed out") || warning.contains("timeout"),

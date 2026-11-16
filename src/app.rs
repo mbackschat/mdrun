@@ -1,4 +1,5 @@
 use crate::cli::Command as Action;
+use crate::discovery;
 use crate::document::{self, BlockKind, Document};
 use crate::remote;
 use std::ffi::{OsStr, OsString};
@@ -12,11 +13,10 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 pub fn execute(action: &Action, workdir: Option<&Path>) -> Result<i32, String> {
-    let path = action.file();
     let remote_url = std::env::var("SHOWBOAT_REMOTE_URL").ok();
     let remote = remote_url.as_deref();
     match action {
-        Action::Init { title, .. } => {
+        Action::Init { file: path, title } => {
             if path.exists() {
                 return Err(format!("file already exists: {}", path.display()));
             }
@@ -44,14 +44,18 @@ pub fn execute(action: &Action, workdir: Option<&Path>) -> Result<i32, String> {
                 ],
             );
         }
-        Action::Note { text, .. } => {
+        Action::Note { file: path, text } => {
             let text = text_arg(text.as_deref())?;
             let doc = read(path)?;
             let rendered = document::render_note(&text);
             write(path, &doc.append(&rendered))?;
             post(&doc, remote, b"note", &[("markdown", &rendered)]);
         }
-        Action::Exec { lang, code, .. } => {
+        Action::Exec {
+            file: path,
+            lang,
+            code,
+        } => {
             let code = text_arg(code.as_deref())?;
             require_file(path)?;
             let (output, status) = run_code(lang.as_bytes(), &code, workdir)?;
@@ -76,7 +80,7 @@ pub fn execute(action: &Action, workdir: Option<&Path>) -> Result<i32, String> {
             stdout(&output)?;
             return Ok(status);
         }
-        Action::Image { input, .. } => {
+        Action::Image { file: path, input } => {
             let input = text_arg(input.as_deref())?;
             require_file(path)?;
             let (source, supplied_alt) = image_input(&input);
@@ -139,12 +143,12 @@ pub fn execute(action: &Action, workdir: Option<&Path>) -> Result<i32, String> {
                 remote::post_image(remote, id, &filename, alt, &destination);
             }
         }
-        Action::Pop { .. } => {
+        Action::Pop { file: path } => {
             let doc = read(path)?;
             write(path, &doc.pop()?)?;
             post(&doc, remote, b"pop", &[]);
         }
-        Action::Verify { output, .. } => {
+        Action::Verify { file: path, output } => {
             let doc = read(path)?;
             let mut replacements = Vec::new();
             let mut differences = Vec::new();
@@ -182,13 +186,38 @@ pub fn execute(action: &Action, workdir: Option<&Path>) -> Result<i32, String> {
             stdout(&differences)?;
             return Ok(i32::from(!replacements.is_empty()));
         }
-        Action::Extract { filename, .. } => {
+        Action::Extract {
+            file: path,
+            filename,
+        } => {
             let doc = read(path)?;
             let target = filename.as_deref().unwrap_or(path.as_os_str());
             for command in doc.extract(target.as_bytes()) {
                 stdout(&command)?;
                 stdout(b"\n")?;
             }
+        }
+        Action::List {
+            files,
+            filter,
+            json,
+        } => {
+            let mut entries = Vec::new();
+            for file in files {
+                let filename = file
+                    .to_str()
+                    .ok_or_else(|| format!("file path is not valid UTF-8: {}", file.display()))?;
+                entries.extend(discovery::inventory(
+                    filename,
+                    &read(file)?,
+                    filter.as_deref(),
+                )?);
+            }
+            stdout(&discovery::render(&entries, *json)?)?;
+        }
+        Action::Preview { file, block } => {
+            let doc = read(file)?;
+            stdout(discovery::preview(&doc, *block)?)?;
         }
     }
     Ok(0)
