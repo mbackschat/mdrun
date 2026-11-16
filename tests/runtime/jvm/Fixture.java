@@ -16,13 +16,14 @@ import java.util.concurrent.locks.LockSupport;
 public final class Fixture implements Application {
     private final Set<Thread> baseline = Thread.getAllStackTraces().keySet();
     private static Invocation retained;
+    private static Invocation previous;
     private static String lateOperation;
 
     public static void main(String[] args) {
         try {
             Worker.run(Path.of(args[0]), Fixture::new);
             if (retained != null) {
-                if (lateOperation.equals("late_hook")) {
+                if (lateOperation.equals("late_hook") || lateOperation.equals("late_invalidate_hook")) {
                     CountDownLatch blocked = new CountDownLatch(1);
                     Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                         blocked.countDown();
@@ -44,6 +45,10 @@ public final class Fixture implements Application {
 
     private static void lateIo() {
         try {
+            if (lateOperation.equals("late_invalidate") || lateOperation.equals("late_invalidate_hook")) {
+                invalidateCaught(retained);
+                return;
+            }
             if (lateOperation.equals("late_noop")) {
                 retained.stdin().close();
                 retained.stdout().close();
@@ -56,6 +61,12 @@ public final class Fixture implements Application {
             else if (lateOperation.equals("late_stderr")) retained.stderr().write(1);
             else retained.stdout().write(1);
         } catch (IOException ignored) { }
+    }
+
+    private static void invalidateCaught(Invocation request) {
+        try {
+            request.invalidate();
+        } catch (RuntimeException ignored) { }
     }
 
     @Override
@@ -74,6 +85,27 @@ public final class Fixture implements Application {
             throw new IllegalStateException("request argv must be immutable");
         } catch (UnsupportedOperationException expected) { }
         return switch (request.argv().isEmpty() ? "" : request.argv().getFirst()) {
+            case "invalidate_caught", "invalidate_twice" -> {
+                invalidateCaught(request);
+                if (request.argv().getFirst().equals("invalidate_twice")) invalidateCaught(request);
+                yield 0;
+            }
+            case "retain_invalidation" -> {
+                previous = request;
+                yield 0;
+            }
+            case "invalidate_previous" -> {
+                invalidateCaught(previous);
+                yield 0;
+            }
+            case "invalidate_gated" -> {
+                Path gate = Path.of(request.argv().get(1));
+                Thread.ofPlatform().daemon().name("fixture-invalidation").start(() -> {
+                    while (!Files.exists(gate)) LockSupport.parkNanos(1_000_000);
+                    invalidateCaught(request);
+                });
+                yield 0;
+            }
             case "throw" -> throw new IllegalStateException("private application detail");
             case "blocked_input" -> {
                 request.stdin().read();
@@ -105,7 +137,7 @@ public final class Fixture implements Application {
                 request.stdout().flush();
                 yield 0;
             }
-            case "late_stdout", "late_stderr", "late_input", "late_hook", "late_noop" -> {
+            case "late_stdout", "late_stderr", "late_input", "late_hook", "late_noop", "late_invalidate", "late_invalidate_hook" -> {
                 retained = request;
                 lateOperation = request.argv().getFirst();
                 yield 0;

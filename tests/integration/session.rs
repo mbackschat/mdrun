@@ -879,6 +879,47 @@ fn jvm_late_output_after_shutdown_fails_the_session_despite_successful_call() {
 }
 
 #[test]
+#[ignore = "requires independently prepared JVM fixtures selected by MDRUN_JVM_FIXTURE"]
+fn jvm_adapter_invalidation_fails_the_session_even_when_caught() {
+    let manifest = jvm_manifest();
+    for command in [
+        "invalidate_caught",
+        "late_invalidate",
+        "late_invalidate_hook",
+    ] {
+        let fixture = Fixture::new();
+        fixture.write(
+            "binding.json",
+            serde_json::to_vec(&manifest["binding"]).unwrap(),
+        );
+        let output = fixture.run(&["--require-warm"], &["tool", command]);
+        assert!(!output.status.success(), "{command}");
+        assert!(output.stdout.is_empty(), "{command}");
+        let report = fixture.report();
+        assert_eq!(report["warm_calls"], 1, "{command}");
+        assert_eq!(report["cold_calls"], 0, "{command}");
+        assert_eq!(report["worker_starts"], 1, "{command}");
+        assert_eq!(report["outcome"], "failure", "{command}");
+        assert_eq!(report["cleanup"]["outcome"], "clean", "{command}");
+        if command == "invalidate_caught" {
+            assert_eq!(report["application_statuses"], json!([]));
+            assert!(
+                report["infrastructure_failure"]
+                    .as_str()
+                    .is_some_and(|reason| !reason.is_empty())
+            );
+        } else {
+            assert_eq!(report["author_status"]["exit_code"], 0);
+            assert_eq!(report["application_statuses"][0]["exit_code"], 0);
+            assert_eq!(
+                report["infrastructure_failure"],
+                "worker orderly shutdown failed"
+            );
+        }
+    }
+}
+
+#[test]
 #[ignore = "native author helper; no-op without its managed-session marker"]
 fn jvm_author_fixture() {
     if std::env::var_os(JVM_AUTHOR_MARKER).as_deref() != Some(std::ffi::OsStr::new("1")) {

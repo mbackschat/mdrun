@@ -78,12 +78,12 @@ class Host(contextlib.AbstractContextManager):
         self.diagnostics.close()
         self.directory.cleanup()
 
-    def classify(self, command, request="one"):
-        send(self.data, {"kind": "classify", "request_id": request, "argv": [command]})
+    def classify(self, command, request="one", *arguments):
+        send(self.data, {"kind": "classify", "request_id": request, "argv": [command, *arguments]})
         return receive(self.data)
 
-    def invoke(self, command, request="one"):
-        assert self.classify(command, request) == {"kind": "eligible", "request_id": request}
+    def invoke(self, command, request="one", *arguments):
+        assert self.classify(command, request, *arguments) == {"kind": "eligible", "request_id": request}
         send(self.data, {"kind": "invoke", "request_id": request})
         assert receive(self.data) == {"kind": "accepted", "request_id": request}
 
@@ -130,6 +130,52 @@ class JvmProtocol(unittest.TestCase):
             self.assertEqual(receive(host.data), {"kind": "complete", "request_id": "two", "exit_code": 17})
             host.release("two")
             self.assertEqual(host.shutdown(), 0)
+
+    def assert_invalidation_fault(self, host, request):
+        self.assertEqual(receive(host.data), {"kind": "fault", "request_id": request,
+                                            "reason": "application_invalidated"})
+        self.assertEqual(host.process.wait(timeout=3), 70)
+        with self.assertRaises(EOFError):
+            receive(host.data)
+        host.diagnostics.seek(0)
+        self.assertEqual(host.diagnostics.read(), b"")
+
+    def test_invalidation_is_sticky_even_when_caught_and_repeated(self):
+        for command in ("invalidate_caught", "invalidate_twice"):
+            with self.subTest(command=command), self.host() as host:
+                host.invoke(command)
+                self.assert_invalidation_fault(host, "one")
+
+    def test_invalidation_through_an_old_request_faults_the_later_invocation(self):
+        with self.host() as host:
+            host.invoke("retain_invalidation", "first")
+            self.assertEqual(receive(host.data), {"kind": "complete", "request_id": "first", "exit_code": 0})
+            host.release("first")
+            host.invoke("invalidate_previous", "second")
+            self.assert_invalidation_fault(host, "second")
+
+    def test_invalidation_after_completion_or_release_faults_the_worker(self):
+        for released in (False, True):
+            with self.subTest(released=released), self.host() as host:
+                gate = Path(host.directory.name) / "invalidate-now"
+                host.invoke("invalidate_gated", "one", str(gate))
+                self.assertEqual(receive(host.data), {"kind": "complete", "request_id": "one", "exit_code": 0})
+                if released:
+                    host.release()
+                gate.touch()
+                self.assert_invalidation_fault(host, None if released else "one")
+
+    def test_invalidation_after_orderly_return_halts_even_when_caught_or_shutdown_hooks_stall(self):
+        for command in ("late_invalidate", "late_invalidate_hook"):
+            with self.subTest(command=command), self.host() as host:
+                host.invoke(command)
+                self.assertEqual(receive(host.data), {"kind": "complete", "request_id": "one", "exit_code": 0})
+                host.release()
+                self.assertEqual(host.shutdown(), 70)
+                with self.assertRaises(EOFError):
+                    receive(host.data)
+                host.diagnostics.seek(0)
+                self.assertEqual(host.diagnostics.read(), b"")
 
     def test_binary_streams_exceed_frame_size_and_keep_fresh_eof(self):
         data = bytes(range(256)) * 12289

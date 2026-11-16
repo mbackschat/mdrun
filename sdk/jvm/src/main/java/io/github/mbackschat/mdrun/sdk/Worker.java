@@ -9,6 +9,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.math.BigInteger;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -166,7 +167,8 @@ public final class Worker {
             this.id = id;
             this.argv = argv;
             this.invocation = new Invocation(id, argv, new RequestInput(session, this),
-                    new RequestOutput(session, this, "stdout"), new RequestOutput(session, this, "stderr"));
+                    new RequestOutput(session, this, "stdout"), new RequestOutput(session, this, "stderr"),
+                    () -> { throw new UncheckedIOException(session.violation("application_invalidated")); });
         }
     }
 
