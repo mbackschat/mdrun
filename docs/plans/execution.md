@@ -57,7 +57,7 @@ Hosted CI (historical run) and CodeQL (historical run) pass at `0defeab` on 2026
 - [ ] Node SDK: load an explicit handler once and await sequential invocations. Keep loaded code immutable; reread mutable input/configuration. Qualify timers, listeners, unresolved work, children, failures and late output. Module reload or a VM context is not a general reset strategy.
 - [ ] Python SDK: load an explicit factory with fresh request-owned arguments/streams. Ordinary failures return status; uncaught exceptions and invalid completion poison reuse. Qualify threads, process exits and native-extension limits; do not promise automatic reuse of arbitrary scripts.
 - [ ] Run shared conformance through every SDK without runtime-specific host branches. Compare independently launched packaged cold, assert actual routing/reuse, and check changed inputs plus failure-then-success sequences.
-- [ ] Bound parallel independent document sessions. Stop admission on failure, drain launched peers and aggregate reports; keep worker calls sequential and preserve shared-resource exclusions.
+- [ ] Implement [bounded independent document scheduling](scheduling.md): stop admission on failure, drain launched peers and aggregate reports; keep worker calls sequential and preserve shared batch exclusions. Resource-free parallelism alone does not establish shared batch custody.
 - [ ] Provide a minimal application-adapter example and SDK guide. Keep protocol, relay, supervision, scheduling and report production out of consumer code.
 
 ## M6: complete-product qualification

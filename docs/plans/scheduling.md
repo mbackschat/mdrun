@@ -1,0 +1,35 @@
+# Independent document scheduling
+
+## Public contract
+
+```sh
+mdrun verify-many --binding binding.json --jobs 6 \
+  --share-resources --report batch.json -- first.md second.md
+```
+
+`verify-many` accepts one or more document paths, one prepared binding and a positive integer `--jobs` (default `1`). Clap owns argument parsing and usage errors. Existing `--mode`, `--require-warm` and global `--workdir` retain their meanings; document paths resolve from the caller's directory. Each admitted document gets a separate sequential worker and session identity. Exclude updated-document `--output` from this command and reject entry from an existing managed session. This command verifies whole independent documents, without inferring dependencies or selecting blocks.
+
+`--share-resources` declares that the selected independent documents may execute concurrently while sharing the binding's external exclusions. Without it, documents with overlapping resource requirements serialize; resource-free documents may still run concurrently up to `--jobs`. The batch holds its declared exclusions for its entire lifetime, including gaps between documents. Report both requested and effective concurrency and the explicit sharing policy. Selecting concurrent documents remains the caller's corpus policy; a shared lease does not establish that arbitrary command side effects are independent.
+
+A scheduling slot covers startup, replay and observed cleanup. The first observed document failure stops new admission; already-started healthy documents finish within their deadlines. Preserve existing verify/session treatment of recorded application nonzero statuses. Cancellation or custody-wide failure stops launched scopes. Do not retry failed documents automatically. Missing reports, uncertain cleanup and documents skipped after admission stops cannot yield batch success.
+
+Diagnostics remain attributable to their document and are presented without interleaving command bytes. An optional versioned aggregate report contains overall outcome, wall duration, concurrency/sharing policy and an input-ordered entry for every requested document: completed with its session report, failed without a valid report, or not started because admission stopped. Preserve existing single-session report semantics; keep credentials and captured application bytes out of aggregate metadata.
+
+## Shared custody requirement
+
+Use one authoritative native custodian for the entire batch. Document scopes own their worker, author and cold-process groups; scope completion requires observed cleanup of all its groups but does not release the batch listener. One uncertain scope prevents new admission and retains exclusion. Batch-owner/control loss stops all scopes through the same native custody authority. Release exclusions only after every admitted scope has certified cleanup. Removing resources from child configurations, a scheduler-only listener, or nesting today's independent sessions does not satisfy this contract.
+
+The [native custody contract](session-protocol.md#ownership-and-external-resources) and its cooperative-process limits still apply. Sharing a listener does not weaken per-document invocation admission, context comparison, output delivery or no-retry guarantees.
+
+## Implementation and acceptance tasks
+
+| Task | Required result |
+| --- | --- |
+| Add the clap command and batch entry point | Preserve single-document verify behavior and its parser guards; validate jobs, paths, binding and output/report combinations before executing documents |
+| Separate host coordination from standalone startup | Reuse per-document host logic with captured context, scoped custody and explicit per-document descriptors; capture baseline context before coordinator threads start |
+| Add native custody scopes and a broker | Keep one owner of the custodian control connection and direct child; register scopes, attribute groups/events, enforce scope deadlines, stop/complete scopes and certify batch release |
+| Implement bounded scheduling | Hold slots through cleanup, stop admission on first observed failure, drain healthy started peers, cancel all scopes on global failure and never retry |
+| Aggregate reports and diagnostics | Represent every input document, preserve failures without reports, record actual concurrency/sharing and avoid interleaved output |
+| Qualify concurrency and admission | Demonstrate overlapping independent scopes within the configured limit, queued work left unstarted after failure, and a running healthy peer drained afterward |
+| Qualify shared exclusion and owner loss | A competing batch cannot acquire the listener, including between scopes; multiple surviving descendants remain excluded after owner loss; one uncertain scope prevents release |
+| Repeat isolated consumer scheduling | Use the explicit shared-lease policy and equal artifacts/corpus; assert real concurrent documents, one sequential worker per document, route counts and cleanup |
