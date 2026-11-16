@@ -32,7 +32,8 @@ jobs:
         run: node --test --test-timeout=10000 tests/runtime/node/worker.test.mjs
       - name: Qualify native sessions with Node
         timeout-minutes: 1
-        run: MDRUN_NODE="$(command -v node)" cargo test --locked --test integration session:: -- --ignored
+        run: |
+          MDRUN_NODE="$(command -v node)" cargo test --locked --test integration session:: -- --ignored
       - run: cargo build --release --locked
       - uses: actions/upload-artifact@v7
         with:
