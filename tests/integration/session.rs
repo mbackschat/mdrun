@@ -5,6 +5,9 @@ use std::process::{Command, Output, Stdio};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
+#[path = "session_context.rs"]
+mod context;
+
 struct Fixture(PathBuf);
 
 impl Fixture {
