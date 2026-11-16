@@ -5,12 +5,46 @@ version = 1
 # Generated manuals and third-party notice outputs are outside the source inventory.
 exclude = ["docs/man/**", "THIRD_PARTY_NOTICES.txt", "packaging/notices.json"]
 
-[[overrides]]
+[[refinements]]
 id = "manual-generation-tooling"
 match = ["src/manual.rs"]
 purpose = "production"
 category = "tooling"
 reason = "Maintained man-page generation hosted in a test-only module, with freshness and rendering guards sharing the file"
+
+# Refine components without overriding test conventions or build-module credit.
+[[refinements]]
+id = "rust-host-component"
+match = ["src/**"]
+except = ["src/manual.rs"]
+kind = ["source"]
+purpose = "production"
+category = "rust-host"
+reason = "The native CLI, document engine and generic process/session supervision"
+
+[[refinements]]
+id = "jvm-sdk-component"
+match = ["sdk/jvm/src/main/**"]
+kind = ["source"]
+purpose = "production"
+category = "jvm-sdk"
+reason = "Cooperative runtime library launched in the application JVM, separate from the Rust host"
+
+[[refinements]]
+id = "node-sdk-component"
+match = ["sdk/node/*.mjs"]
+kind = ["source"]
+purpose = "production"
+category = "node-sdk"
+reason = "Cooperative runtime library loaded by the application's Node worker"
+
+[[refinements]]
+id = "python-sdk-component"
+match = ["sdk/python/mdrun_sdk/**"]
+kind = ["source"]
+purpose = "production"
+category = "python-sdk"
+reason = "Cooperative runtime library imported by the application's Python worker"
 
 [[rules]]
 id = "runtime-sdk-source"
