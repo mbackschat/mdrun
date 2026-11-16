@@ -61,6 +61,11 @@ jobs:
         env:
           MDRUN_JVM_FIXTURE: ${{ runner.temp }}/jvm-fixture/fixture-manifest.json
         run: python3 tests/runtime/jvm/qualify.py
+      - name: Qualify application character output against cold Java
+        timeout-minutes: 1
+        env:
+          MDRUN_JVM_FIXTURE: ${{ runner.temp }}/jvm-fixture/fixture-manifest.json
+        run: python3 tests/runtime/jvm/output_bridge.py
       - name: Qualify native sessions with the JVM
         timeout-minutes: 1
         env:

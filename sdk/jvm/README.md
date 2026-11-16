@@ -71,6 +71,8 @@ public final class ExampleWorker {
 
 The example's empty reset is justified only by its stateless, synchronous behavior. A real adapter must stop and inspect its own threads, executors, children and other resources, reread mutable inputs and qualify failure-then-success behavior against independently launched packaged cold execution. Do not copy an empty reset into an adapter that owns work requiring cleanup.
 
+For callable applications taking `Appendable`, the separate [application output example](examples/README.md) preserves process-stream charsets while enforcing invocation lifetime before character encoding. Close its admission inside `invoke`, before returning. It is a small application helper outside the SDK package; global stream routing and application reset/resource checks remain the adapter's responsibility.
+
 ## Borrowed streams and completion
 
 The SDK constructs each immutable `Invocation`; adapters receive it rather than construct value objects. Its five accessors remain `requestId()`, `argv()`, `stdin()`, `stdout()` and `stderr()`, with immutable arguments and borrowed binary streams. Positive-length reads and writes are valid only while `invoke` runs. Input is lazy: an actual read issues credit for at most 65536 bytes, one read may be outstanding, and EOF lasts only for that invocation. A handler that ignores stdin issues no input credit. Finish all application reads before returning; outstanding input invalidates completion.

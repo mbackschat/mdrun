@@ -10,6 +10,7 @@ Current status: document CLI and read-only discovery qualified on macOS/Linux, 2
 | [Proposed session protocol](plans/session-protocol.md) | Developing native/SDK contract and proof obligations before API freeze |
 | [Node SDK](../sdk/node/README.md) | Experimental cooperative worker API, examples and resource limits |
 | [JVM SDK](../sdk/jvm/README.md) | Experimental Java 21 worker API, preparation and application reset contract |
+| [JVM character output example](../sdk/jvm/examples/README.md) | Request-owned Appendable sinks, charset parity and explicit lifetime limits |
 | [Deferred work](DEFERRED.md) | Unscheduled scope and reopening conditions |
 | [Distribution](distribution.md) | Release targets, artifacts, Homebrew and Linux package qualification |
 | [Dependency choices](dependencies.md) | Reasons for compiled libraries and qualification policy |
