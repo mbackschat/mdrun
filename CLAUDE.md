@@ -6,10 +6,10 @@ mdrun is a Rust CLI for executable Markdown with cooperative warm execution. Edi
 
 - Read [PLAN](docs/PLAN.md), then only the contract, plan section and source relevant to the task.
 - [PRODUCT](docs/PRODUCT.md) distinguishes implemented behavior from accepted goals; [README](README.md) owns user entry points.
-- [Documentation index](docs/README.md) owns navigation. [Research provenance](docs/research/README.md) identifies the immutable feasibility snapshot and its limitations.
+- [Documentation index](docs/README.md) owns navigation. [Research provenance](docs/research/README.md) identifies the extracted feasibility conclusions and their limitations.
 - [Distribution](docs/distribution.md) owns release targets, packaging and Homebrew publication; the MIT license and retained `mdrun` name are owner decisions.
 
-The archived handoff guides the product direction; historical status, proposed APIs, copied prompts and prototype guarantees are not current implementation instructions. Do not reopen the accepted name, Rust choice, full compatibility goal or runtime order without a concrete blocker.
+The extracted requirements guide product direction; historical prototype guarantees are not current implementation claims. Do not reopen the accepted name, Rust choice, full compatibility goal or runtime order without a concrete blocker.
 
 ## Structure and boundaries
 
@@ -18,8 +18,10 @@ The archived handoff guides the product direction; historical status, proposed A
 | [src](src) | Production Rust executable; introduce modules when a milestone needs them |
 | [tests/integration](tests/integration) | Modules of one integration-test binary; no top-level `tests/*.rs` |
 | [docs/plans](docs/plans/README.md) | Active implementation and migration acceptance plans |
-| [docs/research](docs/research/README.md) | Provenance and preserved experimental evidence |
+| [docs/research](docs/research/README.md) | Source provenance and extracted conclusions |
 | [.github/workflows](.github/workflows) | Current product CI |
+
+Reference checkouts remain read-only until an explicit migration task authorizes their edits. Test drives may use isolated copies or prepared artifacts outside that checkout; never write build output or modify its harness there. Production tests must not require either the original Downloads folder or another project checkout.
 
 ## Development and verification
 
@@ -44,7 +46,7 @@ Use one paragraph per physical line and regular Markdown links. Keep indexes as 
 
 Archive completed detailed plans under `docs/plans/archive/` when needed, preserving evidence and updating links; transfer remaining work to PLAN or [DEFERRED](docs/DEFERRED.md). Do not create duplicate live copies. Add user-visible changes under `Unreleased` in [CHANGELOG](CHANGELOG.md); internal tooling changes do not require an entry.
 
-Preserve [the research snapshot](docs/research/showboat-like-tool/README.md) byte for byte. Its exact-byte checksum contract takes precedence over reformatting historical Markdown. Reproduce experiments in a disposable clone of the bundled history: the original harness overwrites some evidence paths. Record new results separately with their revision, artifact identities and limitations. Do not transfer synthetic prototype speedups into product performance claims.
+Retain useful research as concise maintained contracts and source references; do not import entire prototype repositories, raw evidence collections or Git bundles. Record new qualification results with their revision, artifact identities and limitations. Do not transfer synthetic prototype speedups into product performance claims.
 
 Temporary files belong to their invoking command; use scoped temporary directories and clean up only those directories. Keep generated output and local research out of Git. Do not copy LOCmetry-specific dependencies, hooks or analysis rules into this project without a demonstrated need. The owner explicitly requested Homebrew and Linux distribution following LOCmetry's conventions.
 

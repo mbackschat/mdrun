@@ -26,8 +26,3 @@ jobs:
       - run: python3 -m unittest discover -s packaging -p 'test_*.py'
       - name: Check contributor entry point
         run: test -L AGENTS.md && test "$(readlink AGENTS.md)" = CLAUDE.md
-      - name: Verify preserved research
-        if: runner.os == 'Linux'
-        run: |
-          sha256sum --check docs/research/showboat-like-tool.sha256
-          git bundle verify docs/research/showboat-like-tool.bundle

@@ -10,15 +10,15 @@
 
 Inspired by [Showboat](https://github.com/simonw/showboat), created by Simon Willison. Showboat established the workflow this project builds on: executable Markdown combining prose, commands and captured output, with replay to verify the results. Credit for that original idea and command model belongs to Showboat and its contributors.
 
-Current status: project bootstrap. The executable supports help and version output only; document commands and warm execution are planned. The preserved feasibility prototype is separate from the product and does not establish production compatibility or lifecycle guarantees.
+Current status: project bootstrap. The executable supports help and version output only; document commands and warm execution are planned. The extracted feasibility conclusions guide implementation; they do not establish production compatibility or lifecycle guarantees.
 
 ## Why a new implementation?
 
 | Goal | Motivation |
 | --- | --- |
-| Small native binary | Rust lets us pursue a compact host. The 2026-11-15 execution prototype measured 372,192 bytes on macOS arm64 and 487,320 bytes on Linux arm64, versus roughly 2.5 MB for the equivalent Go prototype. These are [prototype measurements](docs/research/showboat-like-tool/docs/07-RESULTS.md), not a comparison with Showboat or a size promise for the finished tool. |
+| Small native binary | Rust lets us pursue a compact native host. Finished-product size and comparisons will be measured against identified binaries; historical prototype measurements are not product promises. |
 | Standalone installation | Distribute a native executable that starts without Rust, Java, Node, Python or a separate Showboat installation. Target commands still need their own runtimes and tools; macOS uses system libraries, and static Linux release binaries are the packaging target. |
-| Warm JVM, Node and Python execution | Reuse qualified runtime/application initialization across commands to reduce repeated startup cost, while preserving independent cold execution for parity and release checks. JVM and Node come first, then Python; [all three have feasibility prototypes](docs/research/showboat-like-tool/README.md). |
+| Warm JVM, Node and Python execution | Reuse qualified runtime/application initialization across commands to reduce repeated startup cost, while preserving independent cold execution for parity and release checks. JVM and Node come first, then Python; the [execution plan](docs/plans/execution.md) owns their implementation and qualification. |
 | One reusable execution engine | Move session supervision, forwarding, streaming and cleanup into mdrun so consumer repositories can retain thin build/policy/application adapters instead of their own warm-execution harnesses. |
 | Familiar documents and commands | Preserve pinned Showboat behavior and existing recordings while giving the new implementation its own truthful identity. |
 
@@ -52,7 +52,7 @@ The executable is `target/release/mdrun`. Keep [Cargo.lock](Cargo.lock) in versi
 | [Product contract](docs/PRODUCT.md) | Supported behavior and accepted product goals, clearly separated |
 | [Implementation plan](docs/PLAN.md) | Ordered milestones and completion gates |
 | [Compatibility qualification](docs/plans/compatibility.md) | Proposed upstream baseline and finite acceptance inventory |
-| [Research provenance](docs/research/README.md) | Complete imported prototype, evidence, checksums and Git history |
+| [Research provenance](docs/research/README.md) | Extracted conclusions and source provenance |
 | [Distribution](docs/distribution.md) | macOS/Linux CI, Homebrew and Linux release packages |
 | [Deferred work](docs/DEFERRED.md) | Explicitly deferred scope and reopening conditions |
 

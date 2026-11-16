@@ -2,7 +2,7 @@
 
 **mdrun — Create, run, and verify executable Markdown documents.**
 
-Status: bootstrap, 2026-11-16. The current executable contract is limited to the next section. Remaining sections are accepted requirements for implementation, not claims of supported behavior. The source decisions are preserved in the [handoff](research/showboat-like-tool/docs/09-NEXT-SESSION.md) and [design](research/showboat-like-tool/docs/02-DESIGN.md).
+Status: bootstrap, 2026-11-16. The current executable contract is limited to the next section. Remaining sections are accepted requirements for implementation, not claims of supported behavior. The useful source conclusions are recorded in [research provenance](research/README.md) and the [execution plan](plans/execution.md).
 
 ## Implemented behavior
 

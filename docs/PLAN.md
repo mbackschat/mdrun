@@ -1,6 +1,6 @@
 # Implementation plan
 
-Status: active, 2026-11-16. Repository setup, local checks, import recovery, hosted macOS/Linux CI and the three-target packaging dry run passed. The production milestones below remain open. Follow [PRODUCT](PRODUCT.md) for accepted scope and [the preserved handoff](research/showboat-like-tool/docs/09-NEXT-SESSION.md) for provenance.
+Status: active, 2026-11-16. Repository setup, local checks, hosted macOS/Linux CI and the three-target packaging dry run passed. The production milestones below remain open. Follow [PRODUCT](PRODUCT.md) for accepted scope and [extracted research](research/README.md) for provenance.
 
 ## Ordered milestones
 
@@ -32,7 +32,7 @@ Status: active, 2026-11-16. Repository setup, local checks, import recovery, hos
 
 ## Working discipline
 
-Use red/green implementation and finite oracles. Review protocol/lifecycle and final compatibility claims adversarially before accepting their milestones. Keep qualification results tied to revisions and artifacts; a historical pass or configured workflow does not satisfy a new gate. Save new evidence outside the immutable snapshot and time comparisons alone on a near-idle host.
+Use red/green implementation and finite oracles. Review protocol/lifecycle and final compatibility claims adversarially before accepting their milestones. Keep qualification results tied to revisions and artifacts; a historical pass or configured workflow does not satisfy a new gate. Save new evidence separately from source and time comparisons alone on a near-idle host.
 
 ## Concrete lessons from related implementations
 

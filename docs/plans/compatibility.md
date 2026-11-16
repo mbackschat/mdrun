@@ -1,6 +1,6 @@
 # Showboat compatibility qualification
 
-Status: planned M1/M2 work. This inventory is not a passing compatibility claim. The accepted scope comes from the [handoff](../research/showboat-like-tool/docs/09-NEXT-SESSION.md#required-compatibility); [PRODUCT](../PRODUCT.md) owns the product requirement.
+Status: planned M1/M2 work. This inventory is not a passing compatibility claim. [PRODUCT](../PRODUCT.md) owns the accepted requirement; [research provenance](../research/README.md) records its origin.
 
 ## Baseline
 
