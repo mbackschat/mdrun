@@ -36,7 +36,7 @@ def send(connection, frame):
 
 
 class Host(contextlib.AbstractContextManager):
-    def __init__(self, java, classpath, mode=None):
+    def __init__(self, java, classpath, mode=None, main_class="Fixture"):
         self.directory = tempfile.TemporaryDirectory(prefix="mdrun-jvm-peer-")
         self.listener = socket.socket()
         self.listener.bind(("127.0.0.1", 0))
@@ -54,7 +54,8 @@ class Host(contextlib.AbstractContextManager):
             environment["MDRUN_JVM_FIXTURE"] = mode
         else:
             environment.pop("MDRUN_JVM_FIXTURE", None)
-        self.process = subprocess.Popen([java, "-cp", classpath, "io.github.mbackschat.mdrun.fixture.Fixture", str(config)],
+        self.lifecycle = main_class == "Lifecycle"
+        self.process = subprocess.Popen([java, "-cp", classpath, "io.github.mbackschat.mdrun.fixture." + main_class, str(config)],
                                         env=environment, stdin=subprocess.DEVNULL, stdout=self.diagnostics, stderr=self.diagnostics)
         try:
             for _ in range(2):
@@ -75,9 +76,17 @@ class Host(contextlib.AbstractContextManager):
             raise
 
     def __exit__(self, *_):
+        if self.lifecycle:
+            for name in ("invoke.continue", "cleanup.continue"):
+                (Path(self.directory.name) / name).touch()
         for connection in self.connections:
             connection.close()
         self.listener.close()
+        if self.lifecycle and self.process.poll() is None:
+            try:
+                self.process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                pass
         if self.process.poll() is None:
             self.process.kill()
         self.process.wait(timeout=3)
@@ -118,6 +127,59 @@ class JvmProtocol(unittest.TestCase):
 
     def host(self, mode=None):
         return Host(self.java, self.classpath, mode)
+
+    def test_application_owned_thread_and_child_are_attested_before_shutdown_cleanup(self):
+        def observed(path):
+            deadline = time.monotonic() + 2
+            while True:
+                try:
+                    return json.loads(path.read_text())
+                except FileNotFoundError:
+                    self.assertLess(time.monotonic(), deadline, f"missing observation {path.name}")
+                    time.sleep(.005)
+
+        def advancing(directory, kinds):
+            for kind in kinds:
+                path = directory / (kind + ".progress")
+                previous = observed(path)
+                deadline = time.monotonic() + 1
+                while observed(path) <= previous:
+                    self.assertLess(time.monotonic(), deadline, f"owned {kind} stopped progressing")
+                    time.sleep(.005)
+
+        for kind in ("clean", "thread", "child"):
+            with self.subTest(kind=kind), Host(self.java, self.classpath, main_class="Lifecycle") as host:
+                directory = Path(host.directory.name)
+                kinds = ("thread", "child") if kind == "clean" else (kind,)
+                host.invoke(kind)
+                self.assertEqual(observed(directory / "owned.ready.json"), {"kinds": list(kinds)})
+                advancing(directory, kinds)
+                (directory / "invoke.continue").touch()
+                if kind == "clean":
+                    self.assertEqual(receive(host.data), {"kind": "complete", "request_id": "one", "exit_code": 0})
+                    self.assertEqual(observed(directory / "invocation.closed.json"), {"clean": True})
+                    host.release()
+                    host.invoke("ignore", "two")
+                    self.assertEqual(receive(host.data), {"kind": "complete", "request_id": "two", "exit_code": 0})
+                    host.release("two")
+                    self.assertEqual(host.shutdown(), 0)
+                else:
+                    self.assertEqual(receive(host.data), {"kind": "fault", "request_id": "one", "reason": "reset_failed"})
+                    self.assertEqual(observed(directory / "reset.failed.json"), {"actor": kind})
+                    observed(directory / "cleanup.pending.json")
+                    self.assertIsNone(host.process.poll())
+                    self.assertFalse((directory / "cleanup.started.json").exists())
+                    advancing(directory, kinds)
+                    (directory / "cleanup.continue").touch()
+                    self.assertEqual(host.process.wait(timeout=3), 70)
+                    with self.assertRaises(EOFError):
+                        receive(host.data)
+                self.assertEqual(observed(directory / "cleanup.closed.json"), {"clean": True})
+                if "child" in kinds:
+                    self.assertEqual(observed(directory / "child.observed.json"), {"exit_code": 0})
+                    self.assertEqual(observed(directory / "child.closed.json"), {"clean": True})
+                for name in ("thread.expired", "child.expired", "cleanup.failed", "gate.expired"):
+                    self.assertFalse((directory / name).exists(), name)
 
     def test_ignores_input_and_reuses_after_nonzero_status(self):
         with self.host() as host:

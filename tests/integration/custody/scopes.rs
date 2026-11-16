@@ -379,21 +379,21 @@ fn scoped_anchor_uncertainty_keeps_the_batch_excluded_without_clean_completion()
     register(&mut controller, "failed", 20000);
     register(&mut controller, "sibling", 20000);
     let executable = std::env::current_exe().unwrap();
-    let mut launch = spec("");
-    launch["argv"] = json!([
+    let mut payload_spec = spec("");
+    payload_spec["argv"] = json!([
         os(executable.as_os_str().as_bytes()),
         os("--exact"),
         os("custody::cooperative_payload_fixture"),
         os("--nocapture"),
         os("--test-threads=1")
     ]);
-    launch["environment"] = json!([[
+    payload_spec["environment"] = json!([[
         os("MDRUN_CUSTODY_PAYLOAD_DIRECTORY"),
         os(directory.0.as_os_str().as_bytes())
     ]]);
     let descriptor = File::open("/dev/null").unwrap();
     controller.send(
-        json!({"kind":"spawn","scope":"failed","id":"author","spec":launch}),
+        json!({"kind":"spawn","scope":"failed","id":"author","spec":payload_spec}),
         &[descriptor.as_raw_fd(); 3],
     );
     let started = controller.receive();
@@ -402,6 +402,10 @@ fn scoped_anchor_uncertainty_keeps_the_batch_excluded_without_clean_completion()
     wait_until(|| directory.0.join("ready").exists());
     let payload = Process::record(started["event"]["pid"].as_i64().unwrap() as i32);
     controller.payloads.push(payload.clone());
+    let sibling = launch(&mut controller, "sibling", "author", "exec /bin/sleep 15");
+    assert_ne!(started["event"]["group"], sibling["group"]);
+    let sibling_payload = Process::record(sibling["pid"].as_i64().unwrap() as i32);
+    assert!(sibling_payload.alive().unwrap());
     let anchor = Process::record(started["event"]["group"].as_i64().unwrap() as i32);
     controller.kill_anchor(&anchor).unwrap();
     let event = controller.receive();
@@ -409,12 +413,24 @@ fn scoped_anchor_uncertainty_keeps_the_batch_excluded_without_clean_completion()
     assert_eq!(event["event"]["kind"], "uncertain");
     assert!(payload.alive().unwrap());
     assert!(excluded(address));
+    let sibling_events = drain_scope(&mut controller, "sibling");
+    assert!(sibling_events.contains(&json!({"kind":"scope_event","scope":"sibling","event":{"kind":"exited","id":"author","status":{"code":null,"signal":15}}})));
+    assert!(
+        sibling_events
+            .iter()
+            .any(|event| event["event"]["kind"] == "clean")
+    );
+    assert!(!sibling_payload.alive().unwrap());
+    assert!(payload.alive().unwrap());
+    assert!(excluded(address));
     wait_until(|| {
         fs::read(directory.0.join("custody.status.json"))
             .ok()
             .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
             .is_some_and(|state| {
-                state["status"] == "custody_retained" && state["scopes"][0]["phase"] == "stopping"
+                state["status"] == "custody_retained"
+                    && state["scopes"][0]["phase"] == "stopping"
+                    && state["groups"][1]["clean"] == true
             })
     });
     let state: Value =
@@ -422,6 +438,8 @@ fn scoped_anchor_uncertainty_keeps_the_batch_excluded_without_clean_completion()
             .unwrap();
     assert_eq!(state["groups"][0]["scope"], "failed");
     assert_eq!(state["groups"][0]["clean"], false);
+    assert_eq!(state["groups"][1]["scope"], "sibling");
+    assert_eq!(state["groups"][1]["clean"], true);
     drop(controller);
     assert!(!payload.alive().unwrap());
     assert!(!excluded(address));

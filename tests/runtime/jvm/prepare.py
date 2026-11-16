@@ -27,7 +27,7 @@ def prepare(java_home, jackson_core, output, *, download=False):
                         "-cp", classpath, "-d", str(classes),
                         *map(str, sorted(Path(__file__).parent.glob("*.java")))], check=True, timeout=60)
         for archive_name, entries in [("cold.jar", ["Example.class", "ColdMain.class"]),
-                                      ("worker.jar", ["Example.class", "Fixture.class"])]:
+                                      ("worker.jar", ["Example.class", "Fixture.class", "Lifecycle.class"])]:
             with zipfile.ZipFile(output / archive_name, "w", compression=zipfile.ZIP_DEFLATED) as archive:
                 for name in entries:
                     entry = zipfile.ZipInfo(PACKAGE + name)
