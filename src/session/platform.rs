@@ -46,14 +46,16 @@ fn observe_group(group: libc::pid_t) -> io::Result<Vec<libc::pid_t>> {
     };
     let mut live = Vec::new();
     for pid in pids.into_iter().filter(|pid| *pid > 0) {
-        let mut info = unsafe { std::mem::zeroed::<libc::proc_bsdinfo>() };
+        // Group/state need no full BSD record, whose same-user check rejects unrelated group peers.
+        // https://github.com/apple-oss-distributions/xnu/blob/xnu-11215.81.4/bsd/kern/proc_info.c#L2048-L2063
+        let mut info = unsafe { std::mem::zeroed::<libc::proc_bsdshortinfo>() };
         unsafe { *libc::__error() = 0 };
         let bytes = unsafe {
             libc::proc_pidinfo(
                 pid,
-                libc::PROC_PIDTBSDINFO,
+                libc::PROC_PIDT_SHORTBSDINFO,
                 0,
-                (&mut info as *mut libc::proc_bsdinfo).cast(),
+                (&mut info as *mut libc::proc_bsdshortinfo).cast(),
                 size_of_val(&info) as i32,
             )
         };
@@ -75,7 +77,7 @@ fn observe_group(group: libc::pid_t) -> io::Result<Vec<libc::pid_t>> {
                 ),
             ));
         }
-        if info.pbi_pgid == group as u32 && info.pbi_status != libc::SZOMB {
+        if info.pbsi_pgid == group as u32 && info.pbsi_status != libc::SZOMB {
             live.push(pid);
         }
     }
@@ -143,6 +145,17 @@ mod tests {
         let group = unsafe { libc::getpgrp() };
         let pid = unsafe { libc::getpid() };
         assert!(live_group_members(group).unwrap().contains(&pid));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn system_group_is_observable_without_full_bsd_process_records() {
+        let group = unsafe { libc::getpgid(1) };
+        assert!(
+            group > 0,
+            "cannot independently identify the system process group"
+        );
+        assert!(live_group_members(group).unwrap().contains(&1));
     }
 
     #[test]
