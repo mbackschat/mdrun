@@ -17,6 +17,8 @@ The helper uses `javac --release 21 -proc:none` and the JDK's `jar` tool; Maven 
 
 The [POM](pom.xml) exposes the exact Jackson dependency to standard consumers and security scanners. The [dependency lock](dependencies.lock.json) records Jackson core `2.22.4`, its 2026-10-17 release date, source URLs, Apache license, bundled notices and reviewed artifact hash. The helper checks POM agreement, a conservative 14 full days after the publication date, the exact jar hash and all five bundled notices before executing any Java tool. Jackson core has no external runtime dependencies in this reviewed configuration; databind and annotations are not added.
 
+Use `--download` instead of `--jackson-core` during preparation to request the exact locked Maven Central URL. Downloads reject redirects and must match the locked hash before compilation. The [dependency evidence](../../docs/dependencies.md#jvm-sdk-development-dependency) records canonical-source verification and its historical qualification limits; SDK distribution and application qualification remain separate gates.
+
 ## Implement an adapter
 
 The host appends one private configuration-file path to the binding's `worker_argv`. Pass that argument directly to `Worker.run`; it contains the host endpoint and credentials, and must stay out of application output. This minimal adapter accepts only `hello`, writes through its invocation's borrowed output stream and owns no mutable state or background work:

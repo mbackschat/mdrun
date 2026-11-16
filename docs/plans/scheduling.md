@@ -1,5 +1,7 @@
 # Independent document scheduling
 
+Status: experimental M4 implementation and qualification work. The public contract below remains under qualification and does not replace single-document `verify`. This plan refines the [execution checklist](execution.md) and [product contract](../PRODUCT.md); the [history-cleanup qualification note](../PLAN.md#qualification-after-history-cleanup) applies to earlier results.
+
 ## Public contract
 
 ```sh
@@ -50,4 +52,6 @@ Scope deadlines are checked by the custodian event loop before admitting the nex
 | Aggregate reports and diagnostics | Represent every input document, preserve failures without reports, record actual concurrency/sharing and avoid interleaved output |
 | Qualify concurrency and admission | Demonstrate overlapping independent scopes within the configured limit, queued work left unstarted after failure, and a running healthy peer drained afterward |
 | Qualify shared exclusion and owner loss | A competing batch cannot acquire the listener, including between scopes; multiple surviving descendants remain excluded after owner loss; one uncertain scope prevents release |
-| Repeat isolated consumer scheduling | Use the explicit shared-lease policy and equal artifacts/corpus; assert real concurrent documents, one sequential worker per document, route counts and cleanup |
+| Qualify shared-resource document scheduling | Use explicit resource-sharing policy and equal artifacts/workloads; assert concurrent documents, one sequential worker per document, route counts and cleanup |
+
+Resource-free scheduling is an intermediate checkpoint. Keep shared-resource custody qualification open until exclusion, concurrent-scope cleanup and owner-loss controls pass on macOS/Linux.

@@ -1,5 +1,11 @@
 # Implementation plan
 
+Status: document CLI and discovery are implemented; managed sessions and runtime SDKs remain experimental. The [execution checklist](plans/execution.md) owns remaining lifecycle, runtime and release gates, including unresolved Linux scope-cleanup qualification.
+
+## Qualification after history cleanup
+
+Earlier qualification results remain as historical narrative tied to their original revision and artifact identities. The associated GitHub Actions records were removed; those results do not qualify the rewritten revision. Fresh macOS/Linux CI, runtime controls and applicable distribution checks must pass on an identified rewritten revision before current hosted qualification is claimed. Historical completion labels below describe the earlier checkpoints.
+
 ## Ordered milestones
 
 | Milestone | Scope | Completion evidence |
@@ -7,6 +13,7 @@
 | M1 — Freeze compatibility (complete) | Verified v0.6.1 source/build, finite syntax/files/metadata/HTTP inventory | [Compatibility evidence](plans/compatibility.md#completion): upstream self-comparison, discriminating negative controls, reviewed fixes guarded; cross-platform harness CI passed |
 | M2 — Document CLI (complete) | Implement all pinned commands and options, source-preserving edits, cold execution, images, replay/diffs, extraction and remote streaming | Hosted qualification (historical run) at `62c60bb`: macOS/Linux behavioral differential and independent clap/preservation/HTTP controls pass; originals stay unchanged unless explicitly selected as output; no external Showboat requirement in product operation |
 | M2a — Discovery (complete) | Read-only command inventory, plain-text filtering, JSON and single-block preview using the replay parser | Hosted qualification (historical run) at `cb75f36`: existing unnamed documents are discoverable; preview shows complete source and starts no command or worker; block locators match replay; native-byte filename preview passes on Linux |
+| M3 — Session and SDK vertical slice | Specify and exercise binding/context identity, classification/admission, streams, failure states, credentials, reporting and ownership before freezing APIs | Protocol/lifecycle review and executable adversarial controls; document replay and multi-command authoring through the same boundary, with unrelated application fixtures |
 | M4 — JVM and Node execution | Native forwarding, managed session scopes, runtime SDKs, bounded scheduling, resource custody and cold routing | Independent packaged-cold parity, actual warm-route assertions, no-retry effects guard, lazy/large-stream tests, state/resource and owner-loss controls on macOS/Linux |
 | M5 — Python extension | Implement a cooperative Python SDK/application boundary | Same host contract and parity/lifecycle suite, with explicit Python state/resource limits; no runtime-specific host branch |
 | M6 — Product qualification | Pin platform matrix, qualify distribution, audit dependencies/licenses and measure complete-session performance | Clean standalone installs, recorded binary/linkage sizes, repeatable warm/cold ratios with route counts and preparation/replay separated |
@@ -35,6 +42,8 @@
 ## Working discipline
 
 Use red/green implementation and finite oracles. Review protocol/lifecycle and final compatibility claims adversarially before accepting their milestones. Keep qualification results tied to revisions and artifacts; a historical pass or configured workflow does not satisfy a new gate. Save new evidence separately from source and time comparisons alone on a near-idle host.
+
+The document CLI and discovery reached their earlier checkpoints; session/SDK implementation and qualification remain incomplete. The historical JVM wire-protocol, packaged-cold parity and synthetic shell-environment controls do not close broader application or lifecycle gates. The [execution checklist](plans/execution.md) covers all remaining host, SDK, runtime and release tasks. [Deferred work](DEFERRED.md) stays outside active milestones until its reopening condition is met.
 
 ## Concrete lessons from related implementations
 

@@ -1,5 +1,7 @@
 # Execution implementation and qualification
 
+Status: required execution work and experimental implementation, with API and lifecycle qualification incomplete. This plan owns the [product execution requirements](../PRODUCT.md#required-execution-behavior). Earlier results are historical narrative; the [history-cleanup qualification note](../PLAN.md#qualification-after-history-cleanup) defines the fresh checks required for the rewritten revision.
+
 ## M3: host and SDK vertical slice
 
 The reviewed [proposed session contract](session-protocol.md) supplies the initial CLI, binding, wire and custody design. It remains unqualified: implement and test its proof obligations before freezing SDK APIs. Host-owned context capture keeps generic environment work out of consumer harnesses. An ambiguous disconnect after dispatch must fail without retry even when the acceptance response was lost.
@@ -72,10 +74,11 @@ The Node [owned-resource fixture](../../tests/runtime/node/lifecycle-worker.mjs)
 
 The Python [owned-thread example](../../sdk/python/examples/owned_thread.py) keeps one explicit non-daemon thread and stop event. Joined work permits reset and reuse; retained or expired work prevents completion, and close stops/joins only the known handle. Independent MEDIUM review found a reset race between expiry and liveness observations; a red/green deterministic guard now requires cleared ownership instead of an apparently dead thread. All 20 local peer controls pass, retaining the real expiry case. Seven native-host entries pass, including retained/joined work and accepted `SystemExit(0)`/`os._exit(0)` effects: independently cold programs exit zero, while warm process exit without completion fails the session with exactly one warm marker and no cold retry. Production SDK code is unchanged. macOS CI (historical run) passes all 20 peer and seven native entries at `ad3211c`; Linux qualification remains pending after an earlier custody-scope failure.
 
+- [ ] JVM SDK: qualify callable invocation with request-owned arguments/streams, classification, reset and resource checks. Keep application globals and cleanup in the adapter. Qualify concrete JDK/platform versions and thread, child and late-output failures.
 - [ ] Node SDK: load an explicit handler once and await sequential invocations. Keep loaded code immutable; reread mutable input/configuration. Qualify timers, listeners, unresolved work, children, failures and late output. Module reload or a VM context is not a general reset strategy.
 - [ ] Python SDK: load an explicit factory with fresh request-owned arguments/streams. Ordinary failures return status; uncaught exceptions and invalid completion poison reuse. Qualify threads, process exits and native-extension limits; do not promise automatic reuse of arbitrary scripts.
 - [ ] Run shared conformance through every SDK without runtime-specific host branches. Compare independently launched packaged cold, assert actual routing/reuse, and check changed inputs plus failure-then-success sequences.
-- [ ] Implement [bounded independent document scheduling](scheduling.md): stop admission on failure, drain launched peers and aggregate reports; keep worker calls sequential and preserve shared batch exclusions. Resource-free parallelism alone does not establish shared batch custody.
+- [ ] Implement [bounded independent document scheduling](scheduling.md): stop admission on failure, drain launched peers and aggregate reports; keep worker calls sequential and preserve shared batch exclusions. Resource-free parallelism alone does not qualify shared-resource custody.
 - [x] Provide a minimal application-adapter example and SDK guide. Keep protocol, relay, supervision, scheduling and report production out of consumer code.
 
 ## M6: complete-product qualification
@@ -85,7 +88,3 @@ The Python [owned-thread example](../../sdk/python/examples/owned_thread.py) kee
 - [ ] Measure complete repeated sessions against independently packaged cold with equal artifacts/context/workload/reset fixtures. Include native clients, startup/shutdown and cleanup; report preparation separately, routing and remaining cold classes. Do not inherit prototype speedup claims.
 - [ ] Document commands/options, binding/report schemas, SDKs, failure behavior, examples, installation and limitations. Keep help, README and agent entry points aligned.
 - [ ] Publish a qualified release and Homebrew formula after distribution gates pass; verify downloads and installation. Public GitHub, MIT, Homebrew and Linux distribution are authorized.
-
-## M7: consumer readiness
-
-- [x] Provide a concrete minimal adapter and migration instructions in mdrun. Preserve only build/configuration, application invocation/eligibility/reset and repository policy in the target architecture.

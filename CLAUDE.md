@@ -23,6 +23,8 @@ The extracted requirements guide product direction; historical prototype guarant
 
 Reference checkouts remain read-only until an explicit migration task authorizes their edits. Test drives may use isolated copies or prepared artifacts outside that checkout; never write build output or modify its harness there. Production tests must not require either the original Downloads folder or another project checkout.
 
+Keep private consumer identities, paths, source observations, application adapters and qualification evidence outside this public repository and its Git history. Public contracts and self-contained synthetic fixtures may describe generic requirements without exposing private application facts. Removing names alone does not make private implementation findings public; check prose, commit messages, historical blobs, generated files and hosted logs before publication.
+
 ## Development and verification
 
 ```sh

@@ -26,6 +26,8 @@ Selection initially operates on whole documents. Names, tag metadata, interactiv
 
 ## Required execution behavior
 
+The host is generic Rust; runtime SDKs implement the external versioned protocol, and application adapters qualify callable entry points and reset/resource behavior. The runtime order is JVM and Node, then Python. Begin with one accelerated binding per session. Unrelated application fixtures must exercise the same boundary before its API freezes; application-specific build, eligibility and reset policies remain outside the host.
+
 Fast execution is the ordinary development route for qualified cooperative bindings; unqualified commands execute normally. Explicit cold execution exercises the actual packaged launcher with original context and descriptors and starts no warm machinery. Session-local native forwarding preserves existing shell blocks, pipes, redirects and executable names. Runtime/application initialization may be reused; command results may not be cached implicitly.
 
 | Boundary | Required guarantee |
