@@ -34,6 +34,10 @@ jobs:
         timeout-minutes: 1
         run: |
           MDRUN_NODE="$(command -v node)" cargo test --locked --test integration session:: -- --ignored --skip session::jvm_
+      - name: Qualify custody after warm host, worker and author loss
+        timeout-minutes: 1
+        run: |
+          MDRUN_NODE="$(command -v node)" cargo test --locked --test integration warm_owner_loss:: -- --ignored --test-threads=1
       - uses: actions/setup-java@v6
         with:
           distribution: temurin

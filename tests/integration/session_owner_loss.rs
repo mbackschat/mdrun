@@ -10,14 +10,14 @@ use std::time::{Duration, Instant};
 const FIXTURE: &str = "session_owner_loss::payload_fixture";
 
 #[derive(Debug, Deserialize, Serialize)]
-struct Process {
-    pid: i32,
-    parent: i32,
-    group: i32,
+pub(super) struct Process {
+    pub(super) pid: i32,
+    pub(super) parent: i32,
+    pub(super) group: i32,
     identity: String,
 }
 
-fn observe(pid: i32) -> io::Result<Option<Process>> {
+pub(super) fn observe(pid: i32) -> io::Result<Option<Process>> {
     #[cfg(target_os = "macos")]
     {
         let mut info = unsafe { std::mem::zeroed::<libc::proc_bsdinfo>() };
@@ -78,14 +78,14 @@ fn observe(pid: i32) -> io::Result<Option<Process>> {
 }
 
 impl Process {
-    fn alive(&self) -> bool {
+    pub(super) fn alive(&self) -> bool {
         observe(self.pid)
             .unwrap()
             .is_some_and(|current| current.identity == self.identity)
     }
 }
 
-fn wait_until(description: &str, mut condition: impl FnMut() -> bool) {
+pub(super) fn wait_until(description: &str, mut condition: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(8);
     while !condition() {
         assert!(Instant::now() < deadline, "deadline expired: {description}");
@@ -93,13 +93,13 @@ fn wait_until(description: &str, mut condition: impl FnMut() -> bool) {
     }
 }
 
-fn write_json(path: &Path, value: &impl Serialize) {
+pub(super) fn write_json(path: &Path, value: &impl Serialize) {
     let temporary = path.with_extension("tmp");
     fs::write(&temporary, serde_json::to_vec(value).unwrap()).unwrap();
     fs::rename(temporary, path).unwrap();
 }
 
-fn read_json(path: &Path) -> Value {
+pub(super) fn read_json(path: &Path) -> Value {
     serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
 }
 
@@ -107,7 +107,7 @@ fn read_process(directory: &Path, name: &str) -> Process {
     serde_json::from_slice(&fs::read(directory.join(name)).unwrap()).unwrap()
 }
 
-fn excluded(address: SocketAddr) -> bool {
+pub(super) fn excluded(address: SocketAddr) -> bool {
     match TcpListener::bind(address) {
         Ok(_) => false,
         Err(error) => {
@@ -117,14 +117,14 @@ fn excluded(address: SocketAddr) -> bool {
     }
 }
 
-struct Run {
-    directory: PathBuf,
-    child: Child,
-    private: Option<PathBuf>,
+pub(super) struct Run {
+    pub(super) directory: PathBuf,
+    pub(super) child: Child,
+    pub(super) private: Option<PathBuf>,
 }
 
 impl Run {
-    fn spawn(directory: PathBuf, command: &mut Command) -> Self {
+    pub(super) fn spawn(directory: PathBuf, command: &mut Command) -> Self {
         let stdout = fs::File::create(directory.join("stdout")).unwrap();
         let stderr = fs::File::create(directory.join("stderr")).unwrap();
         let child = command
@@ -141,7 +141,7 @@ impl Run {
         }
     }
 
-    fn kill_owner(&mut self) {
+    pub(super) fn kill_owner(&mut self) {
         self.child.kill().unwrap();
         self.child.wait().unwrap();
     }
