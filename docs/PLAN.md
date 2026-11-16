@@ -1,6 +1,6 @@
 # Implementation plan
 
-Status: active, 2026-11-16. Repository setup and three-target packaging dry run passed. M1 and M2 passed hosted macOS/Linux qualification at `62c60bb`; M2a discovery is implemented and passes local checks, with hosted qualification pending. Follow [PRODUCT](PRODUCT.md) for accepted scope and [extracted research](research/README.md) for provenance.
+Status: active, 2026-11-16. Repository setup and three-target packaging dry run passed. M1/M2 and M2a discovery passed hosted macOS/Linux qualification, most recently at `cb75f36`. M3 session/SDK implementation is next, guided by the reviewed [proposed contract](plans/session-protocol.md). Follow [PRODUCT](PRODUCT.md) for accepted scope and [extracted research](research/README.md) for provenance.
 
 ## Ordered milestones
 
@@ -8,7 +8,7 @@ Status: active, 2026-11-16. Repository setup and three-target packaging dry run 
 | --- | --- | --- |
 | M1 — Freeze compatibility (complete) | Verified v0.6.1 source/build, finite syntax/files/metadata/HTTP inventory | [Compatibility evidence](plans/compatibility.md#completion): upstream self-comparison, discriminating negative controls, reviewed fixes guarded; cross-platform harness CI passed |
 | M2 — Document CLI (complete) | Implement all pinned commands and options, source-preserving edits, cold execution, images, replay/diffs, extraction and remote streaming | Hosted qualification (historical run) at `62c60bb`: macOS/Linux behavioral differential and independent clap/preservation/HTTP controls pass; originals stay unchanged unless explicitly selected as output; no external Showboat requirement in product operation |
-| M2a — Discovery | Read-only command inventory, plain-text filtering, JSON and single-block preview using the replay parser | Existing unnamed documents are discoverable; preview shows complete source and starts no command or worker; block locators match replay |
+| M2a — Discovery (complete) | Read-only command inventory, plain-text filtering, JSON and single-block preview using the replay parser | Hosted qualification (historical run) at `cb75f36`: existing unnamed documents are discoverable; preview shows complete source and starts no command or worker; block locators match replay; native-byte filename preview passes on Linux |
 | M4 — JVM and Node execution | Native forwarding, managed session scopes, runtime SDKs, bounded scheduling, resource custody and cold routing | Independent packaged-cold parity, actual warm-route assertions, no-retry effects guard, lazy/large-stream tests, state/resource and owner-loss controls on macOS/Linux |
 | M5 — Python extension | Implement a cooperative Python SDK/application boundary | Same host contract and parity/lifecycle suite, with explicit Python state/resource limits; no runtime-specific host branch |
 | M6 — Product qualification | Pin platform matrix, qualify distribution, audit dependencies/licenses and measure complete-session performance | Clean standalone installs, recorded binary/linkage sizes, repeatable warm/cold ratios with route counts and preparation/replay separated |
@@ -22,7 +22,8 @@ Status: active, 2026-11-16. Repository setup and three-target packaging dry run 
 - [x] Define narrow identity projections for extraction and remote warnings; test normal help/version independently without scrubbing arbitrary payloads. Keep preserved-source differences visible and narrowly justified.
 - [x] Pass the required behavioral differential corpus on macOS/Linux plus standalone, extraction-reconstruction and source-preservation controls; document behavior and dependency/license choices.
 - [x] Implement M2a inventory, plain-text filtering, JSON and read-only single-block preview using the same recognition contract. Names/tags/TUI/partial execution remain deferred.
-- [ ] Complete hosted M2a qualification, then implement the session/SDK vertical slice in the [execution checklist](plans/execution.md).
+- [x] Complete hosted M2a qualification.
+- [ ] Implement the session/SDK vertical slice in the [execution checklist](plans/execution.md), starting with the [proposed protocol and custody boundary](plans/session-protocol.md).
 
 ## Decisions before their gate
 

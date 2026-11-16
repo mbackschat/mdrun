@@ -2,6 +2,8 @@
 
 ## M3: host and SDK vertical slice
 
+The reviewed [proposed session contract](session-protocol.md) supplies the initial CLI, binding, wire and custody design. It remains unqualified: implement and test its proof obligations before freezing SDK APIs. Host-owned context capture keeps generic environment work out of consumer harnesses. An ambiguous disconnect after dispatch must fail without retry even when the acceptance response was lost.
+
 - [ ] Define a versioned binding manifest: executable name, prepared worker argv, absolute packaged-cold launcher, protocol/capabilities, immutable artifact identity, fixed startup cwd/environment and external resource identities. Validate before payload startup; build preparation remains external.
 - [ ] Specify readiness, authentication, side-effect-free classification, refusal, acceptance, invocation, completion acknowledgement and shutdown. Reject incompatible versions, stale identities, malformed frames and overlapping calls. Frame limits bound individual messages, not total streams.
 - [ ] Implement a private session directory and native forwarding entry point for one explicit PATH binding. Protect credentials; keep them out of documents, logs and reports. Do not enroll unrelated commands or alter shell startup files.

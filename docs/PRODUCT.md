@@ -2,7 +2,7 @@
 
 **mdrun — Create, run, and verify executable Markdown documents.**
 
-Status: document CLI qualified on macOS/Linux, 2026-11-16; discovery passes local checks, with hosted qualification pending. Implemented behavior is described below; required execution behavior remains an accepted implementation goal. The useful source conclusions are recorded in [research provenance](research/README.md) and the [execution plan](plans/execution.md).
+Status: document CLI and discovery qualified on macOS/Linux, 2026-11-16. Implemented behavior is described below; required execution behavior remains an accepted implementation goal. The useful source conclusions are recorded in [research provenance](research/README.md) and the [execution plan](plans/execution.md).
 
 ## Implemented behavior
 
@@ -30,7 +30,7 @@ Fast execution is the ordinary development route for qualified cooperative bindi
 
 | Boundary | Required guarantee |
 | --- | --- |
-| Binding | Prepared worker argv, absolute cold launcher, context and immutable artifact identity supplied externally |
+| Binding | Prepared worker argv, absolute cold launcher and immutable artifact identity supplied externally; fixed startup context captured by the host or explicitly configured |
 | Admission | Side-effect-free classification before acceptance; no stdin consumption during classification; no retry after acceptance |
 | Context | Unsupported cwd/PWD, environment, umask, terminal, encoding or startup-option differences select cold before execution |
 | Streams | Lazy input, streamed binary output, bounded backpressure and descriptor fidelity; frame bounds are not total-input bounds |
