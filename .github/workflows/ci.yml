@@ -24,6 +24,17 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
+      - name: Check terminal fixture observation guards
+        run: python3 -m unittest discover -s tests/runtime/session -p 'test_*.py'
+      - name: Qualify controlling-terminal sessions
+        timeout-minutes: 1
+        run: python3 tests/runtime/session/terminal.py --mdrun "$PWD/target/debug/mdrun" --results "$RUNNER_TEMP/terminal"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: terminal-${{ matrix.os }}
+          path: ${{ runner.temp }}/terminal
+          retention-days: 7
       - uses: actions/setup-node@v7
         with:
           node-version: '26.10.0'
