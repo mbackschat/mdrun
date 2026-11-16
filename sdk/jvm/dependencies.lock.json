@@ -11,8 +11,8 @@
       "artifact_url": "https://repo.maven.apache.org/maven2/com/fasterxml/jackson/core/jackson-core/2.22.4/jackson-core-2.22.4.jar",
       "checksum_url": "https://repo.maven.apache.org/maven2/com/fasterxml/jackson/core/jackson-core/2.22.4/jackson-core-2.22.4.jar.sha256",
       "sha256": "2d30c375cddea9657a1e1ef97547a2694b663b355facb4de53a097782b312d1a",
-      "publisher_checksum_verified": false,
-      "hash_provenance": "The recorded development hash awaits independent canonical Maven Central artifact verification before distribution.",
+      "canonical_artifact_verified": true,
+      "hash_provenance": "On 2026-11-16, macOS and Linux qualification independently downloaded the canonical Maven Central HTTPS artifact and matched this SHA-256 before compilation. This is repository-source verification, not a publisher PGP signature claim.",
       "license": "Apache-2.0",
       "runtime_dependencies": [],
       "bundled_notices": [

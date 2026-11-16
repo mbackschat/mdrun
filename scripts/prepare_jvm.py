@@ -141,7 +141,7 @@ def prepare(java_home, jackson_core, output, *, now=None, download=False):
                     "classpath": [sdk, {"path": dependency_name, "sha256": dependency["sha256"]}],
                     "dependency": {"coordinates": "com.fasterxml.jackson.core:jackson-core:" + dependency["version"],
                                    "published": dependency["published"],
-                                   "publisher_checksum_verified": dependency["publisher_checksum_verified"]}}
+                                   "canonical_artifact_verified": dependency["canonical_artifact_verified"]}}
         (stage / "build-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
         for filename in (sdk_path.name, dependency_name, "build-manifest.json"):
             (stage / filename).replace(output / filename)
