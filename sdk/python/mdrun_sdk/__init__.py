@@ -6,6 +6,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import re
 import select
 import socket
 import struct
@@ -100,9 +101,13 @@ def _fields(value, names):
     _require(type(value) is dict and value.keys() == set(names))
 
 
+# Lone surrogates cannot be encoded as UTF-8 on the wire; a per-character Python loop dominated stdin frame parsing.
+_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
 def _string(value, nonempty=False):
     _require(type(value) is str and (not nonempty or bool(value)))
-    _require(not any(0xD800 <= ord(character) <= 0xDFFF for character in value))
+    _require(value.isascii() or _SURROGATE.search(value) is None)
     return value
 
 

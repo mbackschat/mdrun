@@ -40,11 +40,11 @@ impl ReportFile {
     }
 
     pub(crate) fn publish(&mut self, report: &serde_json::Value) -> Result<(), String> {
-        serde_json::to_writer_pretty(&mut self.file, report)
-            .map_err(|_| "cannot write execution report")?;
+        let encoded =
+            serde_json::to_vec_pretty(report).map_err(|_| "cannot write execution report")?;
         self.file
-            .flush()
-            .map_err(|_| "cannot flush execution report")?;
+            .write_all(&encoded)
+            .map_err(|_| "cannot write execution report")?;
         fs::rename(&self.temporary, &self.destination)
             .map_err(|_| "cannot publish execution report")?;
         Ok(())

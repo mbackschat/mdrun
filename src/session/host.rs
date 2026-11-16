@@ -63,9 +63,9 @@ impl PrivateDirectory {
     fn write(&self, name: &str, value: &impl Serialize) -> Result<PathBuf, String> {
         let path = self.path.join(name);
         let mut file = self.file(name)?;
-        serde_json::to_writer(&mut file, value)
+        let encoded = serde_json::to_vec(value)
             .map_err(|_| "cannot encode private session configuration".to_owned())?;
-        file.flush()
+        file.write_all(&encoded)
             .map_err(|_| "cannot flush private session configuration".to_owned())?;
         Ok(path)
     }

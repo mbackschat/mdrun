@@ -74,7 +74,7 @@ pub fn load(path: &Path) -> Result<ClientConfig, String> {
     {
         return Err("session configuration is not a bounded private file".to_owned());
     }
-    let config: ClientConfig = serde_json::from_reader(file)
+    let config: ClientConfig = serde_json::from_reader(io::BufReader::new(file))
         .map_err(|_| "invalid private session configuration".to_owned())?;
     validate_config(&config)?;
     Ok(config)

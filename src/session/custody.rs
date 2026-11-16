@@ -148,8 +148,7 @@ impl Custody {
             .mode(0o600)
             .open(private_config_path)?;
         file.set_permissions(fs::Permissions::from_mode(0o600))?;
-        serde_json::to_writer(&mut file, config).map_err(invalid_data)?;
-        file.flush()?;
+        file.write_all(&serde_json::to_vec(config).map_err(invalid_data)?)?;
         let (mut control, child_control) = UnixStream::pair()?;
         configure_control(&control)?;
         let mut child = Command::new(executable)
@@ -725,8 +724,7 @@ fn save_state(path: &Path, groups: &[Group], scopes: &[Scope], status: &str) -> 
         .open(&temporary)?;
     let result = (|| {
         file.set_permissions(fs::Permissions::from_mode(0o600))?;
-        serde_json::to_writer(&mut file, &state).map_err(invalid_data)?;
-        file.flush()?;
+        file.write_all(&serde_json::to_vec(&state).map_err(invalid_data)?)?;
         fs::rename(&temporary, path.with_extension("status.json"))
     })();
     drop(file);

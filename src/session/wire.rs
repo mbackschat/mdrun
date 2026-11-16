@@ -227,11 +227,14 @@ pub fn read_message<R: Read, T: DeserializeOwned>(reader: &mut R) -> Result<Opti
 }
 
 pub fn write_message<W: Write, T: Serialize>(writer: &mut W, message: &T) -> Result<(), String> {
+    const PREFIX: usize = 4;
+
+    /// Encodes after a reserved length prefix so the frame leaves in one write; a separate prefix write invites write-write-read Nagle stalls on TCP worker sockets.
     struct BoundedPayload(Vec<u8>);
 
     impl Write for BoundedPayload {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            if bytes.len() > MAX_FRAME_BYTES - self.0.len() {
+            if bytes.len() > MAX_FRAME_BYTES + PREFIX - self.0.len() {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "encoded frame exceeds 1048576 bytes",
@@ -246,13 +249,13 @@ pub fn write_message<W: Write, T: Serialize>(writer: &mut W, message: &T) -> Res
         }
     }
 
-    let mut payload = BoundedPayload(Vec::new());
+    let mut payload = BoundedPayload(vec![0; PREFIX]);
     serde_json::to_writer(&mut payload, message)
         .map_err(|_| "cannot encode JSON frame within 1048576 bytes".to_string())?;
-    let prefix = (payload.0.len() as u32).to_be_bytes();
+    let length = (payload.0.len() - PREFIX) as u32;
+    payload.0[..PREFIX].copy_from_slice(&length.to_be_bytes());
     writer
-        .write_all(&prefix)
-        .and_then(|()| writer.write_all(&payload.0))
+        .write_all(&payload.0)
         .and_then(|()| writer.flush())
         .map_err(|error| format!("cannot write frame ({:?})", error.kind()))
 }

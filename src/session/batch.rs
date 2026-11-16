@@ -229,16 +229,12 @@ fn publish_diagnostics(
             .create_new(true)
             .mode(0o600)
             .open(&path)?;
-        serde_json::to_writer(
-            &mut file,
-            &Publication {
-                label: "mdrun".to_owned(),
-                stdout: None,
-                stderr: None,
-                diagnostics,
-            },
-        )?;
-        file.flush()?;
+        file.write_all(&serde_json::to_vec(&Publication {
+            label: "mdrun".to_owned(),
+            stdout: None,
+            stderr: None,
+            diagnostics,
+        })?)?;
         Ok(path)
     })();
     let Ok(path) = prepared else {
@@ -298,9 +294,9 @@ impl Publisher {
             .mode(0o600)
             .open(&path)
             .map_err(|_| "cannot prepare batch publication")?;
-        serde_json::to_writer(&mut file, &publication)
-            .map_err(|_| "cannot prepare batch publication")?;
-        file.flush()
+        serde_json::to_vec(&publication)
+            .map_err(io::Error::from)
+            .and_then(|encoded| file.write_all(&encoded))
             .map_err(|_| "cannot prepare batch publication")?;
         let id = format!("publication-{index}");
         self.active = Some(Publishing {
