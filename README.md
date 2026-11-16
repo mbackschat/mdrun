@@ -6,11 +6,86 @@
 [![Rust](https://img.shields.io/badge/Rust-2024-orange.svg)](Cargo.toml)
 [![Status: release candidate](https://img.shields.io/badge/status-release%20candidate-yellow.svg)](docs/PLAN.md)
 
-**Turn a command-line demonstration into a document you can check again.**
+**Executable Markdown with warm JVM, Node and Python sessions.**
 
-mdrun combines Markdown explanations, executable commands and captured output. Record a bug reproduction, demonstrate a feature, or let a coding agent leave behind evidence you can replay. When the output changes, `mdrun verify` shows the difference.
+Record command-line demonstrations as Markdown, then replay them to check that the output still matches. For JVM, Node and Python applications, mdrun can keep one application worker alive across repeated calls—reusing startup and initialization while each command runs with fresh arguments and input.
+
+The host is a standalone Rust executable. Warm execution is opt-in: your application supplies a small SDK adapter, and mdrun handles forwarding, streams, supervision and cleanup. This is especially useful when a demonstration or regression suite spends more time starting the application than doing its work.
 
 It is an independent Rust implementation inspired by **[Showboat](https://github.com/simonw/showboat), created by Simon Willison**. Credit for the original executable-demonstration idea and command model belongs to Showboat and its contributors.
+
+## Reuse application startup
+
+A managed session keeps one sequential worker available for eligible calls. Initialization happens once per worker; command results are computed anew. Your scripts keep calling the application by its CLI name.
+
+| Runtime | Initialization you can reuse | Integration guide |
+| --- | --- | --- |
+| JVM | JVM startup, class loading and application initialization | [Java 21 SDK](sdk/jvm/README.md) |
+| Node | Module loading and application initialization | [Node SDK](sdk/node/README.md) |
+| Python | Imports and application initialization | [Python SDK](sdk/python/README.md) |
+
+Your adapter classifies supported calls, invokes the application through request-owned streams, and checks that state and owned work permit reuse. mdrun supplies the generic execution harness. A binding connects that worker to its ordinary cold CLI, which starts a fresh process per call. See the [session guide](docs/guides/sessions.md) for the contract and [measured workloads](docs/performance.md) for performance evidence.
+
+### Try it: changing input, one Python worker
+
+This runnable example records three calls to a small word-count CLI. Between the first two calls it changes the input file. The counts must change, while the worker is reused. Python is the shortest setup; the JVM and Node SDKs use the same session model.
+
+**Prerequisites:** macOS or Linux, Rust 1.98.1 and Python 3.12+ available as `python3`. No published release, Python package installation or external SDK download is needed for this source-checkout demo.
+
+```sh
+git clone https://github.com/mbackschat/mdrun.git
+cd mdrun
+cargo build --release --locked
+
+MDRUN_DEMO_BIN="$PWD/target/release/mdrun"
+MDRUN_DEMO_DIR=/tmp/mdrun-warm-demo
+python3 examples/warm-python/prepare.py --output "$MDRUN_DEMO_DIR"
+
+"$MDRUN_DEMO_BIN" --workdir "$MDRUN_DEMO_DIR" session \
+  --binding "$MDRUN_DEMO_DIR/binding.json" --require-warm \
+  --report "$MDRUN_DEMO_DIR/warm.json" \
+  -- sh "$MDRUN_DEMO_DIR/author.sh" "$MDRUN_DEMO_BIN"
+
+python3 examples/warm-python/check.py --directory "$MDRUN_DEMO_DIR" \
+  --report "$MDRUN_DEMO_DIR/warm.json" --mode fast
+```
+
+Choose a new directory for each run; preparation refuses to overwrite an existing one. The author script creates two Markdown documents in that directory. Actual output from the session and checker:
+
+```text
+lines=1 words=3
+lines=1 words=5
+lines=1 words=2
+Verified literal output: warm=3 cold=0 workers=1 cleanup=clean
+```
+
+The [author script](examples/warm-python/author.sh) uses ordinary `mdrun exec` calls containing `wordcount first.txt` and `wordcount second.txt`. The session-local binding forwards those calls to one Python worker. `--require-warm` prevents an unexpected cold fallback from passing unnoticed. The checker verifies literal document output, application statuses, route counts and clean cleanup.
+
+Open `first.md` to see the commands and changed captures; open `warm.json` to inspect the routes. The [walkthrough](docs/examples/warm-python.md) explains the [ordinary CLI](examples/warm-python/application.py), [SDK adapter](examples/warm-python/worker.py), generated binding and setup helper. Follow its [cold comparison](docs/examples/warm-python.md#compare-with-fresh-processes) to verify the same output with three fresh processes and no reused worker. This example qualifies reuse and fresh input; the separate [performance measurements](docs/performance.md) cover execution time.
+
+### Replay both documents in parallel
+
+Keep the variables from the preceding demo and run:
+
+```sh
+"$MDRUN_DEMO_BIN" --workdir "$MDRUN_DEMO_DIR" verify-many \
+  --binding "$MDRUN_DEMO_DIR/binding.json" --require-warm --jobs 2 \
+  --report "$MDRUN_DEMO_DIR/batch.json" \
+  "$MDRUN_DEMO_DIR/first.md" "$MDRUN_DEMO_DIR/second.md"
+
+python3 examples/warm-python/check.py --directory "$MDRUN_DEMO_DIR" \
+  --report "$MDRUN_DEMO_DIR/batch.json" --mode batch
+```
+
+Successful replay is quiet; the checker prints:
+
+```text
+Verified literal output: warm=3 cold=0 workers=2 cleanup=clean
+```
+
+Each document gets its own session and worker; the first document's two calls reuse one worker. These documents use separate input files, so they can run independently. `--jobs 2` bounds concurrent document sessions. An observed failure stops new admission while healthy admitted documents drain; the [batch guide](docs/guides/sessions.md#independent-documents) explains resource sharing and aggregate reports.
+
+Warm integration requires explicit application cleanup. Managed descendants must remain in their assigned process groups; shell job control and daemonization are outside the supported boundary. Unsupported calls can use the cold launcher before acceptance, unless `--require-warm` forbids it. Accepted calls are never retried. See [context and ownership limits](docs/guides/sessions.md#context-and-ownership-limits).
 
 ## Record your first demonstration
 
@@ -41,16 +116,7 @@ The complete file also has your title, timestamp and note. It is ordinary Markdo
 
 **0.1.0 release candidate:** there is no published product release yet, and publication is held at the owner's request. Document editing, replay, discovery, cooperative managed execution, native packages and SDK assets have passed macOS/Linux pre-release qualification. The public session and SDK version-1 contract is frozen; the [implementation plan](docs/PLAN.md) records the qualified revision and remaining publication gates. Application adapters still need their own parity and resource qualification.
 
-To try the current source, install Rust/Cargo and build the pinned dependencies:
-
-```sh
-git clone https://github.com/mbackschat/mdrun.git
-cd mdrun
-cargo build --release --locked
-./target/release/mdrun --help
-```
-
-Put `target/release/mdrun` in a directory on your PATH to use the examples above. The executable starts without Rust, Go, Java, Node, Python or an external Showboat installation. Commands you execute still need their own interpreters and application runtimes.
+The warm demo above includes the source build. Put `target/release/mdrun` in a directory on your PATH to use the shorter commands below, and run `mdrun --help` to explore the CLI. The executable starts without Rust, Go, Java, Node, Python or an external Showboat installation. Commands you execute still need their own interpreters and application runtimes.
 
 Release automation targets macOS Apple Silicon and Linux x86_64/arm64, with archives, static Linux executables, `.deb`/`.rpm` packages and Homebrew through `mbackschat/tap`. Published installation commands will be added after qualification; see [distribution](docs/distribution.md).
 
@@ -91,17 +157,25 @@ CODE
 
 The pipe supplies command source. Executed blocks receive EOF on stdin unless their code supplies input, for example with a file redirection. `note` and `image` also accept their omitted argument from stdin.
 
-## Find the command you need
+## Find a command without running it
+
+Using the warm demo's variables, search its first document and inspect a matching command:
 
 ```sh
-mdrun list demo.md
-mdrun list demo.md --filter hello --json
-mdrun preview demo.md 2
+"$MDRUN_DEMO_BIN" list "$MDRUN_DEMO_DIR/first.md" --filter wordcount
+"$MDRUN_DEMO_BIN" list "$MDRUN_DEMO_DIR/first.md" --filter wordcount --json
+"$MDRUN_DEMO_BIN" preview "$MDRUN_DEMO_DIR/first.md" 3
 ```
 
-The first two commands inventory recognized executable blocks without running them. The last prints the complete source of block `2` in the initial greeting document; use the block value reported by `list` for other documents. Block numbers are replay positions, not permanent identifiers. Filtering is a case-sensitive literal search across the filename, heading and command text.
+The inventory reports two executable blocks, numbered `1` and `3`. Previewing `3` prints this original source without starting the application:
 
-`list --json` supports automation; `preview` preserves the selected fenced source. Neither executes code, expands shell expressions or starts workers. Names, tags, interactive pickers and selective block execution remain [deferred](docs/DEFERRED.md).
+````markdown
+```sh
+printf "red green blue gold silver\n" > first.txt && wordcount first.txt
+```
+````
+
+Use the block value reported by `list`; these are positions in the current document, not permanent identifiers. Filtering searches the filename, heading and full command text with a case-sensitive literal match. JSON output supports coding agents and scripts, while preview lets a person inspect the command before executing it. Neither starts a worker or expands shell expressions. See [discovery and extraction](docs/guides/documents.md#find-inspect-and-recreate). Names, tags, interactive pickers and selective execution remain [deferred](docs/DEFERRED.md).
 
 ## Commands at a glance
 
@@ -121,22 +195,6 @@ The first two commands inventory recognized executable blocks without running th
 | Read offline | `guide [TOPIC]` | Show task guides and reference notes |
 
 Global `--workdir DIR` changes where code executes; document, image and output paths still resolve from your calling directory. Use `--` before positional values starting with a hyphen. Clap supplies ordinary option parsing, help and usage errors.
-
-## Reuse application startup
-
-Repeated JVM startup or expensive Node/Python initialization can dominate a demonstration. mdrun's managed sessions let a **cooperative application adapter** reuse that initialization while keeping ordinary CLI calls in the author script:
-
-```sh
-mdrun session --binding binding.json --report session.json -- sh author.sh
-```
-
-The binding identifies a prepared worker and an independent cold launcher. An adapter classifies eligible calls, invokes the application with request-owned streams, and checks that its state and owned work permit reuse. mdrun owns supervision, forwarding, streaming, scheduling and cleanup. A consumer keeps its build preparation and application-specific adapter instead of another generic warm-execution harness.
-
-This is opt-in application integration, not automatic acceleration of every CLI. Eligible calls can share one sequential worker per session; unsupported contexts select the cold launcher before acceptance. Accepted calls are never retried. `--require-warm` makes an unexpected cold route fail, and reports show route counts and reasons. See the [session guide](docs/guides/sessions.md), [JVM SDK](sdk/jvm/README.md), [Node SDK](sdk/node/README.md) and [Python SDK](sdk/python/README.md).
-
-For reproducible cold/warm comparisons and measured workload results, see [performance measurements](docs/performance.md).
-
-Managed scripts and applications must keep descendants in their assigned process group and stop/await background work for successful orderly completion. Shell monitor mode (`set -m`), independent process groups and daemonization are unsupported. The host cannot detect every departure; a descendant outside this boundary may survive a successful report and released exclusion. The [ownership contract](docs/plans/session-protocol.md#ownership-and-external-resources) defines that limit.
 
 ## Why another implementation?
 

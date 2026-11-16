@@ -6,6 +6,7 @@ Document CLI, read-only discovery, cooperative managed execution, native package
 | --- | --- |
 | [User guides](guides/README.md) | Offline-compatible document workflows, session setup and command reference |
 | [Recorded greeting](examples/greeting.md) | Executed README quick start with replayable output |
+| [Warm Python demo](examples/warm-python.md) | Runnable adapter, changed-input recording, cold comparison and parallel document replay |
 | [Product contract](PRODUCT.md) | Current behavior, accepted goals and architectural boundaries |
 | [Architecture](architecture.md) | Native document/session components, runtime adapter boundary, custody, batch output and evidence limits |
 | [Implementation plan](PLAN.md) | Milestone ordering, open decisions and acceptance gates |

@@ -55,10 +55,10 @@ reason = "Maintained cooperative SDK implementations; the JVM SDK already has Ma
 
 [[rules]]
 id = "maintained-examples"
-match = ["sdk/*/examples/**"]
+match = ["sdk/*/examples/**", "examples/**"]
 purpose = "production"
 category = "example"
-reason = "Maintained SDK examples"
+reason = "Maintained application and SDK examples, separate from the host and runtime libraries"
 
 [[rules]]
 id = "packaged-consumer-fixtures"

@@ -12,7 +12,7 @@
 - Add cooperative `verify-many` with bounded document admission, shared resource custody, ordered output and aggregate reports.
 - Preserve batch failure reports and bounded diagnostics, reject report aliases before execution, and publish session reports atomically.
 - Preserve JVM invocation interrupt semantics and strengthen Node framing, request identity and inert empty-output handling.
-- Add focused offline guides, actionable command help and generated manual pages, with an executed first-use recording.
+- Add focused offline guides, actionable command help and generated manual pages, with an executed first-use recording and runnable warm, cold and batch demonstrations.
 - Document version 1 session/batch report fields, exact cold reasons, signal/forwarding statuses and batch output/concurrency limits.
 - Add native managed sessions, private executable forwarding, independent cold routing, custody/reporting with mdrun package identity, and a cooperative Node SDK.
 - Add a Java 21 SDK with callable application hooks, lazy binary streams, reset/release gating, sticky invocation invalidation, hash-locked preparation and an application character-output example.

@@ -62,4 +62,6 @@ Commit autonomously when a coherent checkpoint passes the checks applicable to i
 
 For recorded user guides, capture actual command output; never invent or hand-edit it. After changing commands, fixtures or recorded behavior, verify affected recordings and independent expected-result assertions. Replay agreement alone does not establish correctness.
 
+Keep warm JVM, Node and Python execution prominent in the README, with runnable demonstrations and links to the runtime integration guides. Explain the required application adapter alongside the benefit of reusing initialization.
+
 The owner authorizes HIGH/MEDIUM subagents where useful for independent checks and reviews. Use the global CLI-specific tier mappings and fresh agents when overriding model/effort; do not duplicate those mappings here. Keep tasks bounded and report relevant findings, including any unresolved issue, before accepting the reviewed milestone.
