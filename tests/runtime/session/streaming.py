@@ -156,9 +156,10 @@ def stop_child(child):
             child.wait(timeout=3)
 
 
-def run_case(mdrun, binding, environment, eager, suite_deadline):
+def run_case(mdrun, binding, environment, case, suite_deadline):
     started = time.monotonic()
-    result = {"case": "eager" if eager else "bounded", "payload_bytes": TOTAL,
+    eager, broken = case == "eager", case == "broken"
+    result = {"case": case, "payload_bytes": TOTAL,
               "accepted_queue_bound_bytes": QUEUE_BOUND, "plateaus": [], "rss_samples": []}
     with tempfile.TemporaryDirectory(prefix="mdrun-streaming-") as temporary:
         directory = Path(temporary).resolve()
@@ -219,25 +220,36 @@ def run_case(mdrun, binding, environment, eager, suite_deadline):
                     first = plateau(progress, child, report, deadline)
                     result["plateaus"].append(first)
                     result["rss_samples"].append(memory_sample(child, progress.pid))
-                    consume(child, progress, digest, deadline, TRANCHE)
-                    resumed_deadline = min(deadline, time.monotonic() + 3)
-                    while progress.read() <= first["produced_bytes"]:
-                        progress.assert_queue_bound()
-                        remaining(resumed_deadline)
-                        time.sleep(0.025)
-                    result["resumed_produced_bytes"] = progress.produced
-                    second = plateau(progress, child, report, deadline)
-                    result["plateaus"].append(second)
-                    result["rss_samples"].append(memory_sample(child, progress.pid))
-                    consume(child, progress, digest, deadline)
-                    assert progress.consumed == TOTAL and digest.hexdigest() == expected_hash()
-                    result["stdout_bytes"] = progress.consumed
-                    result["stdout_sha256"] = digest.hexdigest()
+                    if broken:
+                        child.stdout.close()
+                    else:
+                        consume(child, progress, digest, deadline, TRANCHE)
+                        resumed_deadline = min(deadline, time.monotonic() + 3)
+                        while progress.read() <= first["produced_bytes"]:
+                            progress.assert_queue_bound()
+                            remaining(resumed_deadline)
+                            time.sleep(0.025)
+                        result["resumed_produced_bytes"] = progress.produced
+                        second = plateau(progress, child, report, deadline)
+                        result["plateaus"].append(second)
+                        result["rss_samples"].append(memory_sample(child, progress.pid))
+                        consume(child, progress, digest, deadline)
+                        assert progress.consumed == TOTAL and digest.hexdigest() == expected_hash()
+                        result["stdout_bytes"] = progress.consumed
+                        result["stdout_sha256"] = digest.hexdigest()
                 status = child.wait(timeout=remaining(deadline))
                 observed = json.loads(report.read_text())
-                validate_report(observed, status)
                 progress.read()
-                assert progress.produced == TOTAL
+                if broken:
+                    assert status != 0, observed
+                    assert observed["outcome"] == "failure" and observed["infrastructure_failure"], observed
+                    assert observed["cleanup"]["outcome"] == "clean", observed
+                    assert (observed["warm_calls"], observed["cold_calls"], observed["worker_starts"]) == (1, 0, 1), observed
+                    assert observed["application_statuses"] == [], observed
+                    assert progress.produced < TOTAL and progress.consumed == 0
+                else:
+                    validate_report(observed, status)
+                    assert progress.produced == TOTAL
                 result["report"] = observed
                 result["producer_pid"] = progress.pid
                 result["maximum_produced_minus_consumed"] = progress.maximum_queued
@@ -295,8 +307,8 @@ def main():
     runtime = parser.add_mutually_exclusive_group(required=True)
     runtime.add_argument("--node", type=Path)
     runtime.add_argument("--jvm-fixture", type=Path)
-    parser.add_argument("--case", choices=("all", "bounded", "eager"), default="all",
-                        help="all requires bounded success and eager rejection; eager alone exposes the expected failing oracle")
+    parser.add_argument("--case", choices=("all", "bounded", "eager", "broken"), default="all",
+                        help="all checks bounded success, eager rejection and broken-reader failure; eager alone exposes the expected failing oracle")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     for path in (args.mdrun, args.node, args.jvm_fixture):
@@ -307,8 +319,8 @@ def main():
     result = {"runtime": runtime, "host_sha256": hashlib.sha256(args.mdrun.read_bytes()).hexdigest(),
               "binding_artifact_id": binding["artifact_id"], "cases": [],
               "limits": "RSS is supplementary; the accepted-byte bound and a separate finite-queue source audit establish bounded transport."}
-    for eager in ([False, True] if args.case == "all" else [args.case == "eager"]):
-        result["cases"].append(run_case(args.mdrun, binding, environment, eager, started + 60))
+    for case in (["bounded", "eager", "broken"] if args.case == "all" else [args.case]):
+        result["cases"].append(run_case(args.mdrun, binding, environment, case, started + 60))
     result["elapsed_seconds"] = time.monotonic() - started
     assert result["elapsed_seconds"] <= 60, result["elapsed_seconds"]
     encoded = json.dumps(result, indent=2) + "\n"
