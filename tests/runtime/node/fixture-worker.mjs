@@ -1,4 +1,5 @@
 import { runWorker } from '../../../sdk/node/index.mjs';
+import { createReadStream } from 'node:fs';
 import { rename, writeFile } from 'node:fs/promises';
 
 let afterShutdown;
@@ -17,6 +18,11 @@ await runWorker({
                 for (;;) {
                     const bytes = await request.stdin.read(32768);
                     if (bytes === null) break;
+                    await request.stdout.write(bytes);
+                }
+                return 0;
+            case 'read_file':
+                for await (const bytes of createReadStream(request.argv[1], { highWaterMark: 32768 })) {
                     await request.stdout.write(bytes);
                 }
                 return 0;

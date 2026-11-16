@@ -1,4 +1,4 @@
-use super::{Fixture, JVM_CALLS, jvm_mode_fixture, jvm_run_author};
+use super::{Fixture, PARITY_CALLS, parity_mode_fixture, run_parity_author};
 use serde_json::{Value, json};
 use std::ffi::OsStr;
 use std::fs;
@@ -46,8 +46,8 @@ fn fixture() -> Fixture {
 fn packaged_cold_matches_required_warm_native_author() {
     let binding = binding();
     let root = Fixture::new();
-    let cold = jvm_mode_fixture(&root, "cold", &binding);
-    let fast = jvm_mode_fixture(&root, "fast", &binding);
+    let cold = parity_mode_fixture(&root, "cold", &binding);
+    let fast = parity_mode_fixture(&root, "fast", &binding);
     let expected_statuses = [0, 17, 0, 0, 0, 0, 0];
     let echo_input = fs::read(cold.0.join("echo.input")).unwrap();
     let expected_stdout: [&[u8]; 7] = [
@@ -63,14 +63,14 @@ fn packaged_cold_matches_required_warm_native_author() {
         (&cold, &["--mode", "cold"][..], 0, 7, 0),
         (&fast, &["--mode", "fast", "--require-warm"][..], 7, 0, 1),
     ] {
-        let output = jvm_run_author(fixture, options);
+        let output = run_parity_author(fixture, options);
         assert!(
             output.status.success(),
             "native author failed: {}\n{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        for (index, call) in JVM_CALLS.iter().enumerate() {
+        for (index, call) in PARITY_CALLS.iter().enumerate() {
             assert_eq!(
                 fs::read(fixture.0.join(format!("{call}.stdout"))).unwrap(),
                 expected_stdout[index],
@@ -113,7 +113,7 @@ fn packaged_cold_matches_required_warm_native_author() {
         assert_eq!(report["infrastructure_failure"], Value::Null);
         assert_eq!(report["cleanup"]["outcome"], "clean");
     }
-    for call in JVM_CALLS {
+    for call in PARITY_CALLS {
         for suffix in ["stdout", "stderr", "status"] {
             let file = format!("{call}.{suffix}");
             assert_eq!(

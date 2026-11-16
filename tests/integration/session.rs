@@ -8,6 +8,9 @@ use std::time::{Duration, Instant};
 #[path = "session_context.rs"]
 mod context;
 
+#[path = "session_node.rs"]
+mod node_parity;
+
 #[path = "session_python.rs"]
 mod python;
 
@@ -564,7 +567,7 @@ assert.equal(Buffer.concat(chunks).toString(),'ok');
     assert_eq!(fixture.report()["cold_calls"], 0);
 }
 
-const JVM_AUTHOR_MARKER: &str = "MDRUN_JVM_AUTHOR_FIXTURE";
+const PARITY_AUTHOR_MARKER: &str = "MDRUN_PARITY_AUTHOR_FIXTURE";
 
 fn jvm_shell_binding(fixture: &Fixture, ignore: bool) {
     let prepared = PathBuf::from(std::env::var_os("MDRUN_JVM_FIXTURE").unwrap());
@@ -707,7 +710,7 @@ fn jvm_shell_equivalence_keeps_observing_handlers_cold_with_original_values() {
     }
 }
 
-const JVM_CALLS: [&str; 7] = [
+const PARITY_CALLS: [&str; 7] = [
     "00-ignore",
     "01-fail",
     "02-binary",
@@ -717,7 +720,7 @@ const JVM_CALLS: [&str; 7] = [
     "06-ignore",
 ];
 
-fn jvm_mode_fixture(root: &Fixture, mode: &str, binding: &Value) -> Fixture {
+fn parity_mode_fixture(root: &Fixture, mode: &str, binding: &Value) -> Fixture {
     let fixture = Fixture(root.0.join(mode));
     fs::create_dir(&fixture.0).unwrap();
     fixture.write("binding.json", serde_json::to_vec(binding).unwrap());
@@ -728,7 +731,7 @@ fn jvm_mode_fixture(root: &Fixture, mode: &str, binding: &Value) -> Fixture {
     fixture
 }
 
-fn jvm_run_author(fixture: &Fixture, options: &[&str]) -> Output {
+fn run_parity_author(fixture: &Fixture, options: &[&str]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_mdrun"));
     command
         .args(["session", "--binding"])
@@ -740,7 +743,7 @@ fn jvm_run_author(fixture: &Fixture, options: &[&str]) -> Output {
         .arg(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "session::jvm_author_fixture",
+            "session::parity_author_fixture",
             "--ignored",
             "--nocapture",
             "--test-threads=1",
@@ -748,7 +751,7 @@ fn jvm_run_author(fixture: &Fixture, options: &[&str]) -> Output {
         .current_dir(&fixture.0);
     fixture.capture_with_environment(
         &mut command,
-        &[(JVM_AUTHOR_MARKER, std::ffi::OsStr::new("1"))],
+        &[(PARITY_AUTHOR_MARKER, std::ffi::OsStr::new("1"))],
     )
 }
 
@@ -784,8 +787,8 @@ fn jvm_packaged_cold_matches_required_warm_native_author() {
     assert_eq!(cold_argv[3], "io.github.mbackschat.mdrun.fixture.ColdMain");
 
     let root = Fixture::new();
-    let cold = jvm_mode_fixture(&root, "cold", binding);
-    let fast = jvm_mode_fixture(&root, "fast", binding);
+    let cold = parity_mode_fixture(&root, "cold", binding);
+    let fast = parity_mode_fixture(&root, "fast", binding);
     let expected_statuses = [0, 17, 0, 0, 0, 0, 0];
     let echo_input = fs::read(cold.0.join("echo.input")).unwrap();
     let expected_stdout: [&[u8]; 7] = [
@@ -802,14 +805,14 @@ fn jvm_packaged_cold_matches_required_warm_native_author() {
         (&cold, &["--mode", "cold"][..], 0, 7, 0),
         (&fast, &["--mode", "fast", "--require-warm"][..], 7, 0, 1),
     ] {
-        let output = jvm_run_author(fixture, options);
+        let output = run_parity_author(fixture, options);
         assert!(
             output.status.success(),
             "native author failed: {}\n{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        for (index, call) in JVM_CALLS.iter().enumerate() {
+        for (index, call) in PARITY_CALLS.iter().enumerate() {
             assert_eq!(
                 fs::read(fixture.0.join(format!("{call}.stdout"))).unwrap(),
                 expected_stdout[index],
@@ -847,7 +850,7 @@ fn jvm_packaged_cold_matches_required_warm_native_author() {
         assert_eq!(report["cleanup"]["outcome"], "clean");
     }
 
-    for call in JVM_CALLS {
+    for call in PARITY_CALLS {
         for suffix in ["stdout", "stderr", "status"] {
             let file = format!("{call}.{suffix}");
             assert_eq!(
@@ -927,8 +930,8 @@ fn jvm_adapter_invalidation_fails_the_session_even_when_caught() {
 
 #[test]
 #[ignore = "native author helper; no-op without its managed-session marker"]
-fn jvm_author_fixture() {
-    if std::env::var_os(JVM_AUTHOR_MARKER).as_deref() != Some(std::ffi::OsStr::new("1")) {
+fn parity_author_fixture() {
+    if std::env::var_os(PARITY_AUTHOR_MARKER).as_deref() != Some(std::ffi::OsStr::new("1")) {
         return;
     }
     for (index, (arguments, expected_status)) in [
@@ -948,7 +951,7 @@ fn jvm_author_fixture() {
         } else if index == 4 {
             fs::write("mutable.input", b"after application input changes\0\xff\n").unwrap();
         }
-        let call = JVM_CALLS[index];
+        let call = PARITY_CALLS[index];
         let input = if index == 5 {
             Stdio::from(fs::File::open("echo.input").unwrap())
         } else {
