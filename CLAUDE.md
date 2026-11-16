@@ -51,3 +51,9 @@ Retain useful research as concise maintained contracts and source references; do
 Temporary files belong to their invoking command; use scoped temporary directories and clean up only those directories. Keep generated output and local research out of Git. Do not copy LOCmetry-specific dependencies, hooks or analysis rules into this project without a demonstrated need. The owner explicitly requested Homebrew and Linux distribution following LOCmetry's conventions.
 
 Before asking the owner to choose, double-check the recommendation against source and evidence, supply the rationale, and proceed on routine reversible decisions already within scope. Report encountered code smells and material evidence limits without extending the task silently. Follow global Git and commit-message rules; do not create worktrees or push without explicit instructions.
+
+Commit autonomously when a coherent checkpoint passes the checks applicable to its changed behavior. Group related edits into reviewable units rather than committing every small step. Follow the global `F:` exception and honor explicit instructions not to commit.
+
+For recorded user guides, capture actual command output; never invent or hand-edit it. After changing commands, fixtures or recorded behavior, verify affected recordings and independent expected-result assertions. Replay agreement alone does not establish correctness.
+
+The owner authorizes HIGH/MEDIUM subagents where useful for independent checks and reviews. Use the global CLI-specific tier mappings and fresh agents when overriding model/effort; do not duplicate those mappings here. Keep tasks bounded and report relevant findings, including any unresolved issue, before accepting the reviewed milestone.

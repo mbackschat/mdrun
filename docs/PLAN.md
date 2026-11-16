@@ -1,25 +1,27 @@
 # Implementation plan
 
-Status: active, 2026-11-16. Repository setup, local checks, hosted macOS/Linux CI and the three-target packaging dry run passed. The production milestones below remain open. Follow [PRODUCT](PRODUCT.md) for accepted scope and [extracted research](research/README.md) for provenance.
+Status: active, 2026-11-16. Repository setup, local checks, hosted macOS/Linux CI and the three-target packaging dry run passed. M1's pinned source/build and reviewed differential harness are established locally; M2 implementation is next. Follow [PRODUCT](PRODUCT.md) for accepted scope and [extracted research](research/README.md) for provenance.
 
 ## Ordered milestones
 
 | Milestone | Scope | Completion evidence |
 | --- | --- | --- |
-| M1 — Freeze compatibility | Select and verify the Showboat pin; enumerate syntax, errors, files, metadata and remote behavior; assess CLI parsing dependency | [Compatibility matrix](plans/compatibility.md) expanded into executable differential cases against an exact upstream build; intentional differences isolated |
+| M1 — Freeze compatibility (complete locally) | Verified v0.6.1 source/build, finite syntax/files/metadata/HTTP inventory and explicit parser choice | [Compatibility evidence](plans/compatibility.md#completion): upstream self-comparison, discriminating negative controls, reviewed fixes guarded; cross-platform harness CI configured |
 | M2 — Document CLI | Implement all pinned commands and options, source-preserving edits, cold execution, images, replay/diffs, extraction and remote streaming | Every M1 case passes; originals remain unchanged on verify/copy; no external Showboat requirement in product operation |
 | M2a — Discovery | Read-only command inventory, plain-text filtering, JSON and single-block preview using the replay parser | Existing unnamed documents are discoverable; preview shows complete source and starts no command or worker; block locators match replay |
 | M4 — JVM and Node execution | Native forwarding, managed session scopes, runtime SDKs, bounded scheduling, resource custody and cold routing | Independent packaged-cold parity, actual warm-route assertions, no-retry effects guard, lazy/large-stream tests, state/resource and owner-loss controls on macOS/Linux |
 | M5 — Python extension | Implement a cooperative Python SDK/application boundary | Same host contract and parity/lifecycle suite, with explicit Python state/resource limits; no runtime-specific host branch |
 | M6 — Product qualification | Pin platform matrix, qualify distribution, audit dependencies/licenses and measure complete-session performance | Clean standalone installs, recorded binary/linkage sizes, repeatable warm/cold ratios with route counts and preparation/replay separated |
 
-## Immediate work: M1
+## Immediate work: M2
 
-- Confirm the proposed v0.6.1/commit baseline against upstream source and the consumer pin, then record the exact executable/toolchain identity.
-- Enumerate all command forms, option positions, stdin/exit/error semantics and filesystem/HTTP effects; implement the oracle harness before product command code.
-- Evaluate `clap` or another parsing approach against this inventory. Choose the smallest solution that preserves required behavior; do not inherit LOCmetry's dependency graph or assume parser defaults match upstream.
-- Establish timestamp/UUID/branding normalization narrowly; preserve legacy metadata exactly. Select dependencies for demonstrated needs only.
-- Turn each matrix row into discriminating tests, including negative controls, and keep production integration tests in one binary.
+- [ ] Implement pinned argument scanning, commands/options, help/version and diagnostics with independent integration expectations.
+- [ ] Implement the source-spanned document parser and init/note/pop/extract, including provenance, binary/text representation and quoting; test canonical bytes and untouched noncanonical source separately.
+- [ ] Implement cold exec, merged capture, failures/signals, workdir and stdin behavior; verify replay/diffs and output-copy/update semantics.
+- [ ] Implement image validation/copying/alt/naming and HTTP form/multipart delivery with bounded timeout and nonfatal warnings, including connection failure/timeout cases.
+- [ ] Define exact identity projections for version/help/extraction without scrubbing arbitrary payloads. Keep preserved-source differences visible and narrowly justified.
+- [ ] Pass the full differential corpus on macOS/Linux plus standalone, extraction-reconstruction and source-preservation controls; document behavior and dependency/license choices.
+- [ ] Implement M2a inventory, plain-text filtering, JSON and read-only single-block preview using the same recognition contract. Names/tags/TUI/partial execution remain deferred.
 
 ## Decisions before their gate
 
