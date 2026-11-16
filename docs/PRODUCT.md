@@ -14,6 +14,12 @@ Implement full command-line and feature compatibility against a pinned Showboat 
 
 Required commands are `init`, `note`, `exec`, `image`, `pop`, `verify` and `extract`. Required behavior includes stdin inputs, command failures, interpreter selection, working directories, captured output, image copying/alt text, exact replay and diffs, updated-copy output, extraction/quoting, timestamps/IDs, help/version/options and remote streaming. Recording and verification must operate without an installed Showboat executable; upstream is a test oracle only.
 
+## Required discovery behavior
+
+Accepted on 2026-11-16 for implementation after M2: list recognized executable blocks, filter by plain text across file/heading/command text, emit a machine-readable JSON inventory, and preview one block's complete source without executing it. Reuse replay's block recognition and include existing unnamed Showboat blocks. Entries identify the file, block position, available heading, interpreter and command summary; positions locate blocks in the current document and are not persistent IDs. Preview performs no shell evaluation, variable expansion or worker startup. CLI spelling remains undecided.
+
+Selection initially operates on whole documents. Names, tag metadata, interactive pickers and partial block execution are [deferred](DEFERRED.md); discovery does not require rewriting the existing corpus or introducing dependencies between blocks.
+
 ## Required execution behavior
 
 Fast execution is the ordinary development route for qualified cooperative bindings; unqualified commands execute normally. Explicit cold execution exercises the actual packaged launcher with original context and descriptors and starts no warm machinery. Session-local native forwarding preserves existing shell blocks, pipes, redirects and executable names. Runtime/application initialization may be reused; command results may not be cached implicitly.
