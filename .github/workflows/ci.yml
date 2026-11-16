@@ -56,6 +56,22 @@ jobs:
           MDRUN_JVM_FIXTURE: ${{ runner.temp }}/jvm-fixture/fixture-manifest.json
         run: cargo test --locked --test integration session::jvm_ -- --ignored
       - run: cargo build --release --locked
+      - name: Qualify bounded Node streaming with stalled readers
+        timeout-minutes: 1
+        run: |
+          python3 tests/runtime/session/streaming.py --mdrun "$PWD/target/release/mdrun" --node "$(command -v node)" --output "$RUNNER_TEMP/node-streaming.json"
+      - name: Qualify bounded JVM streaming with stalled readers
+        timeout-minutes: 1
+        run: |
+          python3 tests/runtime/session/streaming.py --mdrun "$PWD/target/release/mdrun" --jvm-fixture "$RUNNER_TEMP/jvm-fixture/fixture-manifest.json" --output "$RUNNER_TEMP/jvm-streaming.json"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: streaming-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/node-streaming.json
+            ${{ runner.temp }}/jvm-streaming.json
+          retention-days: 7
       - uses: actions/upload-artifact@v7
         with:
           name: mdrun-${{ matrix.os }}

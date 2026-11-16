@@ -1,4 +1,5 @@
 import { runWorker } from '../../../sdk/node/index.mjs';
+import { rename, writeFile } from 'node:fs/promises';
 
 let afterShutdown;
 
@@ -48,6 +49,22 @@ await runWorker({
                 return 0;
             case 'blocked_output':
                 for (;;) await request.stdout.write(Buffer.alloc(65536));
+            case 'streaming': {
+                const progress = request.argv[1];
+                const pattern = Buffer.alloc(65536);
+                for (let index = 0; index < pattern.length; index++) pattern[index] = index % 251;
+                const publish = async completed => {
+                    await writeFile(`${progress}.pending`, JSON.stringify({ pid: process.pid, completed_bytes: completed }));
+                    await rename(`${progress}.pending`, progress);
+                };
+                await publish(0);
+                for (let completed = 0; completed < 128 * 1024 * 1024;) {
+                    await request.stdout.write(pattern);
+                    completed += pattern.length;
+                    await publish(completed);
+                }
+                return 0;
+            }
             case 'unawaited_output':
                 request.stdout.write(Buffer.from('queued')).catch(() => {});
                 return 0;

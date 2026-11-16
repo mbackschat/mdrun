@@ -5,7 +5,9 @@ import io.github.mbackschat.mdrun.sdk.Classification;
 import io.github.mbackschat.mdrun.sdk.Invocation;
 import io.github.mbackschat.mdrun.sdk.Worker;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -81,6 +83,18 @@ public final class Fixture implements Application {
                 byte[] bytes = new byte[65536];
                 for (;;) request.stdout().write(bytes);
             }
+            case "streaming" -> {
+                Path progress = Path.of(request.argv().get(1));
+                byte[] pattern = new byte[65536];
+                for (int index = 0; index < pattern.length; index++) pattern[index] = (byte) (index % 251);
+                publishProgress(progress, 0);
+                for (long completed = 0; completed < 128L * 1024 * 1024;) {
+                    request.stdout().write(pattern);
+                    completed += pattern.length;
+                    publishProgress(progress, completed);
+                }
+                yield 0;
+            }
             case "borrowed_close" -> {
                 request.stdin().close();
                 request.stdout().close();
@@ -98,6 +112,13 @@ public final class Fixture implements Application {
             }
             default -> Example.run(request.argv(), request.stdin(), request.stdout(), request.stderr());
         };
+    }
+
+    private static void publishProgress(Path progress, long completed) throws IOException {
+        Path pending = progress.resolveSibling(progress.getFileName() + ".pending");
+        Files.writeString(pending, "{\"pid\":" + ProcessHandle.current().pid()
+                + ",\"completed_bytes\":" + completed + "}");
+        Files.move(pending, progress, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
     }
 
     @Override
