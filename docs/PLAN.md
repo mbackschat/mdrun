@@ -1,8 +1,8 @@
 # Implementation plan
 
-Status: document CLI, discovery, managed sessions and all three SDKs are implemented. The simplification follow-up at `bbe19d9` passes fresh macOS/Linux source, runtime, differential, native-package and SDK artifact qualification. These passes do not close the [unresolved timeout, remaining polling or structural debt](#open-simplification-findings). The public version-1 contract remains frozen for 0.1.0. The owner authorized publication on 2026-11-16; exact-tag qualification, public downloads and Homebrew installation retain their own gates.
+Status: [0.1.0 is published](https://github.com/mbackschat/mdrun/releases/tag/v0.1.0) at `dc2e730cf406fcbb168892ac9a17d41082720ee3`. Its [exact-tag release workflow](https://github.com/mbackschat/mdrun/actions/runs/43955233548) passes native runtime, document differential, native-package and SDK artifact qualification; source CI and CodeQL also pass. Public downloads, Homebrew and pinned SDK consumers pass within the [recorded platform limits](distribution.md#published-010-checkpoint). These passes do not close the [unresolved timeout, remaining polling or structural debt](#open-simplification-findings). The public version-1 contract remains frozen.
 
-Publication authorization, 2026-11-16: the owner's instruction to release supersedes the earlier stop-before-release boundary. Follow the [distribution gates](distribution.md#before-the-first-release), publish only after the exact release tag passes its complete workflow, then verify real public downloads and Homebrew installation. This authorization does not itself establish that publication or those checks succeeded.
+Publication, 2026-11-16: the owner's instruction to release superseded the earlier stop-before-release boundary. GitHub published 0.1.0 at 21:21:07 UTC with seventeen assets after the exact-tag workflow passed on attempt 2. The first attempt could not allocate the macOS build runner; runtime and differential checks passed for the exact revision. The [Homebrew tap update](https://github.com/mbackschat/homebrew-tap/commit/8605f52) is published and matches the release formula. Public-URL Homebrew installation/test/audit, three notices, thirteen manuals and removal pass on macOS arm64. Native Debian 13 arm64 passes the same installed checks using a verified cache because container networking is unavailable; independently downloaded public payloads match the tested input. All fifteen public checksums, native payload comparisons, three public SDK archive consumers and the public `uv` wheel consumer pass. Linux x86_64 has native-package/runtime qualification and formula audit, without an actual Homebrew installation claim.
 
 ## Approved simplification follow-up
 
@@ -68,7 +68,7 @@ The final lifecycle additions explicitly qualify JVM-owned threads and children:
 
 All three runtime-check jobs in [non-publishing run 43862729035](https://github.com/mbackschat/mdrun/actions/runs/43862729035) passed at `7ffcf4da8be1ef04e1528cdec72f2fac7306b25f`: macOS 15 arm64, Ubuntu 24.04 x86_64 and Ubuntu 24.04 arm64. They covered the native host, broker/batch, terminals, three SDKs and streaming controls. This earlier checkpoint qualified runtime jobs, while the final run above additionally qualifies the completed packaging and wheel route.
 
-Completed pre-release work also includes [complete-session measurements](performance.md), the semantic and representative [usability review](plans/usability.md), local standalone macOS archive smoke with thirteen rendered manuals, and versioned SDK archives plus a Python wheel with isolated `uv`/actual-host qualification. Public downloads and Homebrew publication still require their separate checks.
+Completed pre-release work also includes [complete-session measurements](performance.md), the semantic and representative [usability review](plans/usability.md), local standalone macOS archive smoke with thirteen rendered manuals, and versioned SDK archives plus a Python wheel with isolated `uv`/actual-host qualification. These earlier results did not replace the public-download and Homebrew checks now recorded in [distribution](distribution.md#published-010-checkpoint).
 
 ## Qualification after history cleanup
 
@@ -84,7 +84,7 @@ Earlier qualification results remain as historical narrative tied to their origi
 | M3 — Session and SDK vertical slice (frozen candidate) | Specify and exercise binding/context identity, classification/admission, streams, failure states, credentials, reporting and cooperative ownership | Runtime matrix at `7ffcf4d` and independent contract/lifecycle review support the version-1 freeze for 0.1.0 |
 | M4 — JVM and Node execution (implemented and qualified) | Native forwarding, managed session scopes, runtime SDKs, bounded scheduling, resource custody and cold routing | Packaged-cold parity, route/reuse assertions, no-retry, streaming, owned-resource, shared-exclusion and owner-loss controls pass on all three native runners at `7ffcf4d` |
 | M5 — Python extension (implemented and qualified) | Implement a cooperative Python SDK/application boundary | The same runtime matrix passes parity/lifecycle controls with explicit thread, process-exit and native-extension limits; no runtime-specific host branch |
-| M6 — Product qualification (pre-release complete; publication authorized) | Pin platform matrix, qualify distribution, audit dependencies/licenses and measure complete-session performance | Source CI and non-publishing artifact jobs at `bbe19d9` pass native packages and SDK assets; measured sizes and complete-session ratios are recorded. Exact-tag workflow and public-download/Homebrew gates remain open |
+| M6 — Product qualification (0.1.0 complete) | Pin platform matrix, qualify distribution, audit dependencies/licenses and measure complete-session performance | Exact-tag workflow `43955233548`, source CI and CodeQL pass at `dc2e730`; public assets, tap publication, Homebrew and SDK consumers pass within the [recorded platform limits](distribution.md#published-010-checkpoint) |
 
 ## Document CLI and discovery checkpoint
 
@@ -105,13 +105,13 @@ Earlier qualification results remain as historical narrative tied to their origi
 | Version-1 API freeze review (complete) | 0.1.0 release candidate | Independent review accepted the documented public CLI, binding, wire, reports and SDK APIs on 2026-11-16, backed by three-platform runtime controls at `7ffcf4d`; private native protocols remain revision-local |
 | Upstream attribution obligations | Before reusing externally licensed code | Owner selected MIT for mdrun on 2026-11-16; retain Showboat credit and any license notices required by subsequent source reuse |
 | OS/architecture versions, MSRV and binary-size budget (recorded) | M6 | [Qualified distribution matrix and measured candidate artifacts](distribution.md) |
-| Release readiness and tap publication | M6, authorized on 2026-11-16 | Complete the [distribution gates](distribution.md), including exact-tag qualification and actual public-download/Homebrew checks |
+| Release readiness and tap publication (complete) | M6, GitHub and Homebrew 0.1.0 published on 2026-11-16 | Exact-tag qualification, public-download and Homebrew checks pass within the [recorded platform limits](distribution.md#published-010-checkpoint) |
 
 ## Working discipline
 
 Use red/green implementation and finite oracles. Review protocol/lifecycle and final compatibility claims adversarially before accepting their milestones. Keep qualification results tied to revisions and artifacts; a historical pass or configured workflow does not satisfy a new gate. Save new evidence separately from source and time comparisons alone on a near-idle host.
 
-The document CLI, discovery and cooperative session/SDK implementation have reached their qualified candidate checkpoints, and the version-1 public contract is frozen for 0.1.0. Non-publishing artifact checks also pass; authorized publication still requires its exact-tag and actual-installation checks. The [execution checklist](plans/execution.md) owns those gates. [Deferred work](DEFERRED.md) stays outside active milestones until its reopening condition is met.
+The document CLI, discovery and cooperative session/SDK implementation are published in 0.1.0, and the version-1 public contract is frozen. Exact-tag qualification and public-download/Homebrew checks pass within the recorded platform limits. The [execution checklist](plans/execution.md) owns those gates. [Deferred work](DEFERRED.md) stays outside active milestones until its reopening condition is met.
 
 ## Concrete lessons from related implementations
 

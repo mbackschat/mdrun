@@ -1,8 +1,8 @@
 # Distribution and releases
 
-Choose an available version from [GitHub Releases](https://github.com/mbackschat/mdrun/releases). This page describes the consumer packages and maintainer publication gates. Non-publishing qualification passes for the frozen 0.1.0 candidate at `bbe19d9`, dated 2026-11-16: native archives, Linux package installations and SDK consumption are qualified. Public downloads and actual Homebrew installation require separate checks against published assets.
+Version [0.1.0](https://github.com/mbackschat/mdrun/releases/tag/v0.1.0) is published with native packages and all three SDKs. Public-download, Homebrew and pinned SDK consumer checks pass within the platform limits below. This page describes the consumer packages and exact-tag qualification; earlier candidate evidence is retained separately.
 
-The owner selected public GitHub hosting, MIT licensing, Homebrew and Linux packages, and authorized publication on 2026-11-16 after the earlier pre-release hold. An authorized version tag must pass its complete release workflow before GitHub assets are published; Homebrew publication and installation retain the checks below.
+The owner selected public GitHub hosting, MIT licensing, Homebrew and Linux packages, and authorized publication on 2026-11-16 after the earlier pre-release hold. Each version tag must pass its complete release workflow before GitHub assets are published; Homebrew publication and installation retain the checks below.
 
 | Reader task | Start here |
 | --- | --- |
@@ -11,6 +11,24 @@ The owner selected public GitHub hosting, MIT licensing, Homebrew and Linux pack
 | Inspect the qualified candidate | [Artifact sizes and identities](#candidate-artifact-sizes) |
 | Reproduce a package as a maintainer | [Local build and packaging](#build-and-package-locally) |
 | Publish an authorized release | [Release gates](#before-the-first-release), then [publication and Homebrew](#publish-and-update-homebrew) |
+
+## Published 0.1.0 checkpoint
+
+GitHub published [0.1.0](https://github.com/mbackschat/mdrun/releases/tag/v0.1.0) on 2026-11-16 at 21:21:07 UTC from `dc2e730cf406fcbb168892ac9a17d41082720ee3`, with seventeen public assets. The [tag workflow 43955233548](https://github.com/mbackschat/mdrun/actions/runs/43955233548) passes on attempt 2: all three native runtime, Showboat differential and native-build jobs, Linux package installation/removal, SDK archive/wheel consumption, assembly and publication complete successfully. The first attempt could not allocate the macOS build runner; the exact-revision runtime and differential checks passed. Separate [source CI 43955204636](https://github.com/mbackschat/mdrun/actions/runs/43955204636) passes on attempt 2 after an initial Maven HTTP 429 download failure, and [CodeQL 43955204572](https://github.com/mbackschat/mdrun/actions/runs/43955204572) passes for the same revision.
+
+The Homebrew formula is published in [tap commit `8605f52`](https://github.com/mbackschat/homebrew-tap/commit/8605f52); its fetched public contents match the release's `mdrun.rb` byte for byte. A forced public-URL fetch, installation, `brew test`, strict audit, three notices, all thirteen linked manuals and removal pass on macOS arm64. The installed executable has SHA-256 `195a7193e0e1e5bdf70c92444def45ffdd459ea46a35f742b9122bddc4672254`. Native Debian 13 arm64 passes installation/test/audit, notices, thirteen manuals and removal using a checksum-verified archive cache because the container has no outbound network. Independently downloaded public payloads match that tested input. Actual Homebrew installation is qualified on these two ARM64 systems; Linux x86_64 has native-package/runtime qualification and formula audit.
+
+Independent public-asset audit verifies all seventeen assets and all fifteen `SHA256SUMS` entries. Each native archive's nineteen paths, modes and file bytes match its tested candidate; the final formula retains the tested recipe with only the three archive hashes changed. The public `prepare_sdk.py --download` route verifies all three SDK archives against pinned SHA-256 values. Each archive consumer passes two cold calls with zero workers and two required-warm calls with one worker and clean cleanup through the published host. The Python `uv --release` wheel consumer passes the same route, reuse, output and cleanup controls through the real GitHub download URL.
+
+### Published artifact sizes
+
+| Target | Stripped executable bytes | Compressed native archive bytes | Unpacked regular-file bytes |
+| --- | ---: | ---: | ---: |
+| macOS arm64 | 4,218,416 | 2,545,920 | 22,642,831 |
+| Linux x86_64 | 5,006,256 | 2,795,761 | 23,430,671 |
+| Linux arm64 | 4,329,864 | 2,645,232 | 22,754,279 |
+
+All three executables remain below the 8 MiB budget. The published Python wheel is 13,714 bytes, SHA-256 `b8efc3333118805574a91579e6372f2fcdeafea9a581e241424f2a78d22c84c3`. These identify the published assets; the older candidate sizes below remain historical evidence.
 
 ## Targets and artifacts
 
@@ -60,7 +78,7 @@ The candidate Python wheel is 12,771 bytes, SHA-256 `d7d5d9c47a5f790f0923ff2317c
 
 ## Before the first release
 
-Publication is authorized. Complete these gates and retain exact-revision evidence; authorization and historical candidate checks do not establish a successful release.
+Complete these gates and retain exact-revision evidence for each release. The [0.1.0 checkpoint](#published-010-checkpoint) records completed publication and public-download/installation checks with their platform limits; historical candidate checks alone do not establish a successful release.
 
 1. Complete the applicable [product qualification](PLAN.md) and retain passing compatibility/runtime/platform evidence before claiming supported warm execution or migration readiness.
 2. Pass the document smoke scenario against extracted archives, installed Linux packages and Homebrew on supported targets. Local helper success and configured CI are not installation evidence.
@@ -126,7 +144,7 @@ Linux builds install Ubuntu `musl-tools` and select `musl-gcc` for target C/asse
 
 The shared [package smoke scenario](../packaging/smoke.sh) runs the installed executable with an empty environment and PATH, using explicit system interpreter/command paths for the recorded program. It creates a document, adds a note, records literal output and verifies it; changed input must then fail verification without editing the document. An independent guard rejects a version-only stub.
 
-The release workflow passes this scenario against each candidate archive and installed Linux package. Homebrew's test implements the same author/replay/mismatch checks; record actual Homebrew installation separately after the release assets are available.
+The release workflow passes this scenario against each candidate archive and installed Linux package. Homebrew's test implements the same author/replay/mismatch checks; actual 0.1.0 installation evidence is recorded in the [published checkpoint](#published-010-checkpoint).
 
 ## Publish and update Homebrew
 
@@ -141,7 +159,9 @@ The [Homebrew template](../packaging/homebrew/mdrun.rb) uses prebuilt archives f
 3. Run `brew audit --strict mbackschat/tap/mdrun`, `brew install mbackschat/tap/mdrun` and `brew test mbackschat/tap/mdrun` on supported systems.
 4. Publish the tap update only after those checks pass.
 
-For a published formula, install with `brew install mbackschat/tap/mdrun`. Linux users may alternatively download the matching archive or install the `.deb`/`.rpm` package from an available [GitHub release](https://github.com/mbackschat/mdrun/releases). Verify the selected release's checksums before installation.
+Homebrew can trust individual formulae without trusting the entire tap. On Homebrew 7.0.14, the fully qualified `brew install mbackschat/tap/mdrun` grants trust for that formula, and uninstalling it removes that trust entry unless the whole tap is trusted. For an audit or inspection before installation, use `brew trust --formula mbackschat/tap/mdrun` if Homebrew refuses to load it. Existing trust for another formula in the same tap does not cover mdrun.
+
+For a published formula, install with `brew install mbackschat/tap/mdrun`. Linux users may alternatively download the matching archive or install the `.deb`/`.rpm` package from [GitHub Releases](https://github.com/mbackschat/mdrun/releases). Verify the selected release's checksums before installation.
 
 ## Name and registry scope
 

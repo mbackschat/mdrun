@@ -56,7 +56,7 @@ Temporary files belong to their invoking command; use scoped temporary directori
 
 Before asking the owner to choose, double-check the recommendation against source and evidence, supply the rationale, and proceed on routine reversible decisions already within scope. Report encountered code smells and material evidence limits without extending the task silently. Follow global Git and commit-message rules; do not create worktrees or push without explicit instructions.
 
-The owner authorized publication on 2026-11-16. Follow the [release gates](docs/distribution.md#before-the-first-release): the release tag must pass its own complete workflow, and public-download and Homebrew checks require actual published assets. Preserve the [open findings](docs/PLAN.md#open-simplification-findings) when reporting readiness.
+Version 0.1.0 is published with public-download, Homebrew and SDK consumer checks complete; [distribution](docs/distribution.md) owns exact-revision evidence and platform limits. Follow its release gates for future versions: each tag must pass its own complete workflow, and public-download and Homebrew checks require actual published assets. Preserve the [open findings](docs/PLAN.md#open-simplification-findings) when reporting readiness.
 
 Commit autonomously when a coherent checkpoint passes the checks applicable to its changed behavior. Group related edits into reviewable units rather than committing every small step. Follow the global `F:` exception and honor explicit instructions not to commit.
 
