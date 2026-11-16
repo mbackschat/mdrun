@@ -1,6 +1,6 @@
 # Self-explaining CLI and user guide
 
-Status: documentation/help implementation and focused local controls are present, 2026-11-16; complete semantic-reference review and cross-platform installed-manual qualification remain open. The owner requested an engaging, instructive README and self-explaining help/man pages, using Showboat and LOCmetry as references. This extends the documentation gate in [execution qualification](execution.md); it does not postpone the existing runtime, scheduling or distribution requirements.
+Status: documentation/help implementation, semantic-reference audit and representative first-use/automation/warm review are complete locally, 2026-11-16; cross-platform installed-manual qualification remains open. The owner requested an engaging, instructive README and self-explaining help/man pages, using Showboat and LOCmetry as references. This extends the documentation gate in [execution qualification](execution.md); it does not postpone the existing runtime, scheduling or distribution requirements.
 
 ## Reading paths
 
@@ -25,12 +25,14 @@ Keep the root help short enough for unrelated tasks. Route to deeper material co
 - [ ] Package/install the man pages with archives, Homebrew and both Linux package formats; verify their presence and rendering.
 - [x] Execute the displayed quick-start/help recipes against independent expected bytes and statuses, including changed-output failure and original-document preservation. Recorded output must come from real execution.
 - [x] Guard public command/option coverage, guide-source agreement and generated-man freshness. These checks establish coverage and source agreement, not correctness of every reference statement.
-- [ ] Complete a semantic audit of reference exits, context/routing, reports, paths and lifecycle limits against implementation and independent behavioral controls. The focused cold-reason guard covers host reason names only.
-- [ ] Complete independent representative first-use, automation and warm-session review after the batch/report repairs; retain observed usability gaps and limitations. Shorter prose alone does not establish measured agent efficiency.
+- [x] Complete a semantic audit of reference exits, context/routing, reports, paths and lifecycle limits against implementation and independent behavioral controls. The focused cold-reason guard covers host reason names only.
+- [x] Complete independent representative first-use, automation and warm-session review after the batch/report repairs; retain observed usability gaps and limitations. Shorter prose alone does not establish measured agent efficiency.
 
 Shell completions and machine-readable schemas may be evaluated separately if the maintained help/guide surfaces leave a concrete discovery gap; they are not prerequisites for this requested checkpoint. No graphical documentation system or reproduction of LOCmetry's research harness is required.
 
 ## Local qualification
+
+Independent review on 2026-11-16 executed 53 commands and inspected thirteen session/batch reports against host SHA-256 `ddc19af511bb46f3a545ba54a8dc26daa6e3085f162e85d57f4d8d2e3d30da9c`. Literal first-use and changed-output expectations, read-only discovery, workdir/path separation, parser/application/signal statuses, all three SDK cold/warm/batch paths, context fallback, masked require-warm failure and report alias rejection passed. Source audit matched reference semantics for attempt counters, cleanup, resource concurrency, admission and ordered spooling. The only uncovered usability gap was missing offline JSON inventory field semantics; the documents guide now defines field types, ordinal/line bases, nullable heading and encoding limits. Fourteen bootstrap controls pass after this embedded-guide update. Installed-manual checks remain a separate distribution gate; no agent-efficiency claim is inferred.
 
 The README and long-help recipes have independent literal output/status assertions. The [retained greeting](../examples/greeting.md) was captured by mdrun, not hand-authored. Bootstrap guards cover exact guide/source agreement, short/long help distinction, changed-output detection, updated-copy output with input preservation, and multiline command-source stdin. The pre-implementation guide/help controls failed before the new command and examples existed. Source agreement and replay agreement do not establish every guide fact.
 

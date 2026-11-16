@@ -59,6 +59,19 @@ mdrun extract demo.md --filename rebuilt.md > rebuild.sh
 
 `list` searches filename, heading and full command text using a case-sensitive literal substring. For a returned `block` value, `mdrun preview demo.md BLOCK` prints that complete original fenced block without execution. Block values are parser positions in the current file, not persistent IDs or executable-only ordinals.
 
+`list --json` returns an array in input-file and block order. Each object has these fields:
+
+| Field | Type and meaning |
+| --- | --- |
+| `file` | String containing the input filename as supplied. |
+| `block` | Zero-based integer position in the parsed document; pass this value to `preview`. |
+| `line` | One-based integer line number of the opening fence. |
+| `heading` | Nearest preceding title or ATX heading as a string, or null when absent; Setext headings are not interpreted. |
+| `interpreter` | String naming the executable interpreter from the fence. |
+| `summary` | First line of the command as a string; filtering searches the complete command. |
+
+Inventory requires UTF-8 filenames, headings, interpreters and commands; invalid text fails without printing a partial inventory. `preview` preserves the selected source bytes and line endings, including bytes that inventory cannot represent.
+
 `extract` writes commands that would recreate a document; it does not execute them. Inspect `rebuild.sh` before running it. Rerunning these commands executes the recorded programs again and regenerates their output.
 
 ## Paths and automation
