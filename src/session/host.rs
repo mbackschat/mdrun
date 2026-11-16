@@ -694,6 +694,7 @@ pub fn run(options: &Options, command: &[OsString], workdir: Option<&Path>) -> R
     let success = state.infrastructure.is_none() && state.stopped && result == 0;
     let report = json!({
         "version":1,"session_id":identity.session_id,"artifact_id":binding.artifact_id,"binding":{"name":binding.name},
+        "tool":{"name":env!("CARGO_PKG_NAME"),"version":env!("CARGO_PKG_VERSION")},
         "outcome":if success {"success"} else {"failure"}, "author_status":author_status,
         "application_statuses":state.application_statuses,"infrastructure_failure":state.infrastructure,
         "cleanup":{"outcome":if state.stopped {"clean"} else {"uncertain"},"custodian_pid":custody.pid(),

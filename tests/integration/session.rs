@@ -146,6 +146,13 @@ fn explicit_cold_starts_no_worker_and_preserves_the_application_status() {
     );
     assert_eq!(output.stdout, b"cold bytes");
     let report = fixture.report();
+    assert_eq!(report["version"], 1);
+    assert_eq!(
+        report["tool"],
+        json!({"name":"mdrun", "version":env!("CARGO_PKG_VERSION")})
+    );
+    assert_eq!(report["binding"], json!({"name":"tool"}));
+    assert_eq!(report["artifact_id"], "test-artifact");
     assert_eq!(report["worker_starts"], 0);
     assert_eq!(report["warm_calls"], 0);
     assert_eq!(report["cold_calls"], 1);
