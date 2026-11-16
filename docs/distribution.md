@@ -1,6 +1,6 @@
 # Distribution and releases
 
-Status: release qualification in progress, 2026-11-16. The owner selected public GitHub hosting, MIT licensing, Homebrew and Linux packages. No product version has been released. The document CLI and discovery have macOS/Linux qualification; sessions and runtime SDKs remain experimental. A successful packaging run does not close their outstanding ownership and consumer gates.
+Status: final artifact qualification for the frozen 0.1.0 release candidate is in progress, 2026-11-16. The owner selected public GitHub hosting, MIT licensing, Homebrew and Linux packages, and requested a stop before publication. No product version has been released. The version-1 cooperative session/SDK contract has passed its freeze review and native lifecycle qualification; installed-package checks and the held publication gates remain separate.
 
 ## Targets and artifacts
 
@@ -11,6 +11,14 @@ Status: release qualification in progress, 2026-11-16. The owner selected public
 | `aarch64-unknown-linux-musl` | Ubuntu 24.04 ARM64 | Static `.tar.gz`, `.deb`, `.rpm`; Homebrew archive URL |
 
 The initial supported platform baseline is Apple Silicon with macOS 15 or later, and x86_64/ARM64 Linux with Debian 13 or Fedora 43 packages. Ubuntu 24.04 is the native Linux qualification/build host. Older operating systems are outside the qualified matrix; broader full-product qualification remains M6 work. Intel macOS and Windows have no release artifact in this matrix. Linux packages declare no separately installed application runtime: their packaged binary must pass the static-linkage gate. The macOS executable uses system libraries.
+
+The successful runtime jobs at [`7ffcf4d`](https://github.com/mbackschat/mdrun/actions/runs/43862729035) on 2026-11-16 observed the following versions. These are concrete tested combinations, not a claim that arbitrary later runtimes or application adapters inherit qualification. Installed-package and final candidate checks are tracked separately below and in the [execution checklist](plans/execution.md).
+
+| Native qualification host | JVM | Node | Python |
+| --- | --- | --- | --- |
+| macOS 15.8.2, arm64 | Temurin 21.0.13+9 | 26.10.0 | CPython 3.15.2 |
+| Ubuntu 24.04.5, x86_64 | Temurin 21.0.13+9 | 26.10.0 | CPython 3.12.3 |
+| Ubuntu 24.04.5, arm64 | Temurin 21.0.13+9 | 26.10.0 | CPython 3.12.3 |
 
 [CI](../.github/workflows/ci.yml) invokes the reusable [source qualification workflow](../.github/workflows/qualification.yml), covering formatting, Clippy, Rust tests, native broker/batch and Node/JVM/Python session controls, bounded streaming, controlling terminals and the pinned Showboat differential on all three native runners. Every checkout uses the triggering `github.sha`. The release workflow calls this same workflow and publication explicitly depends on its success in the same run; a historical green branch check cannot qualify a new tag. [Release builds](../.github/workflows/release.yml) run on version tags, relevant pull requests and manual dispatch. Pull requests and manual dispatch build/test artifacts without publishing. Native builds run on each target architecture, and Linux packages are installed, smoke-tested and removed inside Debian and Fedora containers.
 
@@ -37,6 +45,8 @@ python3 -m unittest discover -s packaging -p 'test_*.py'
 Archives include the binary, README, changelog, MIT license, [third-party crate notices](../THIRD_PARTY_NOTICES.txt), generated `TOOLCHAIN_NOTICES.txt` and every generated [man page](man/) under `share/man/man1/`. The archive helper requires `mdrun.1` and refuses missing inputs, unsupported targets, invalid versions and an existing destination. Cargo's Linux package metadata lives in [Cargo.toml](../Cargo.toml); the release workflow pins the package-building tools and checks actual installation. Rust is a build dependency; Python, Docker and packaging tools are development/CI dependencies, not dependencies of the installed host.
 
 Homebrew installs the root and command pages through `man1`; Linux packages install them under `/usr/share/man/man1/`. Use `man mdrun` or, for example, `man mdrun-session` after installation. For an extracted archive, add its `share/man` directory to your man-page search path or open a page directly with `man /absolute/archive/share/man/man1/mdrun.1`. Linux installation checks require every generated page, accepting the package builder's compressed `.1.gz` form as well as `.1`.
+
+The disposable Debian slim installation fixture explicitly includes mdrun's documentation when installing the package: that image's default dpkg policy discards almost all manuals and documentation, including custom notice files. The qualifier overrides that filter for mdrun's paths instead of weakening the asset checks. User systems that deliberately exclude documentation must adjust their own policy to install those files. Built native artifacts are retained after a failed install check for diagnosis; publication still requires the complete job to succeed.
 
 The [notice helper](../packaging/notices.py) preserves upstream license/notice texts from checksum-verified crate archives, including nested component notices. Its checked bundle conservatively covers the complete lockfile, including build-only and other-target dependencies; it does not claim every listed crate is linked. CI checks the inventory against Cargo.lock and the bundle hash. When dependencies change, generate fresh full Cargo metadata, regenerate the bundle with `python3 packaging/notices.py generate --metadata /path/to/metadata.json`, and review the selected notice files and license declarations. `check --metadata /path/to/metadata.json` additionally reproduces the bundle from the cached upstream archives. Toolchain/runtime attribution is generated separately as described below.
 
