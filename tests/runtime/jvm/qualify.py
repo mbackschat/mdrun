@@ -36,7 +36,7 @@ def send(connection, frame):
 
 
 class Host(contextlib.AbstractContextManager):
-    def __init__(self, java, classpath):
+    def __init__(self, java, classpath, mode=None):
         self.directory = tempfile.TemporaryDirectory(prefix="mdrun-jvm-peer-")
         self.listener = socket.socket()
         self.listener.bind(("127.0.0.1", 0))
@@ -49,8 +49,13 @@ class Host(contextlib.AbstractContextManager):
         config = Path(self.directory.name) / "worker.json"
         config.write_text(json.dumps({**self.identity, "connect": {"host": "127.0.0.1", "port": self.listener.getsockname()[1]}}))
         config.chmod(0o600)
+        environment = dict(os.environ)
+        if mode:
+            environment["MDRUN_JVM_FIXTURE"] = mode
+        else:
+            environment.pop("MDRUN_JVM_FIXTURE", None)
         self.process = subprocess.Popen([java, "-cp", classpath, "io.github.mbackschat.mdrun.fixture.Fixture", str(config)],
-                                        stdin=subprocess.DEVNULL, stdout=self.diagnostics, stderr=self.diagnostics)
+                                        env=environment, stdin=subprocess.DEVNULL, stdout=self.diagnostics, stderr=self.diagnostics)
         try:
             for _ in range(2):
                 connection, _ = self.listener.accept()
@@ -111,8 +116,8 @@ class JvmProtocol(unittest.TestCase):
         cls.java, cls.classpath = argv[0], argv[2]
         cls.cold = manifest["binding"]["cold_argv"]
 
-    def host(self):
-        return Host(self.java, self.classpath)
+    def host(self, mode=None):
+        return Host(self.java, self.classpath, mode)
 
     def test_ignores_input_and_reuses_after_nonzero_status(self):
         with self.host() as host:
@@ -134,6 +139,32 @@ class JvmProtocol(unittest.TestCase):
             host.release("two")
             self.assertEqual(host.shutdown(), 0)
             self.assertFalse(marker.exists(), "refused classification invoked the application")
+
+    def test_pending_factory_interrupt_does_not_prevent_readiness_or_first_invocation(self):
+        with self.host("interrupted_factory") as host:
+            host.invoke("ignore")
+            self.assertEqual(receive(host.data), {"kind": "output", "request_id": "one", "sequence": 0,
+                                                 "stream": "stdout", "base64": "b2s="})
+            self.assertEqual(receive(host.data), {"kind": "complete", "request_id": "one", "exit_code": 0})
+            host.release()
+            self.assertEqual(host.shutdown(), 0)
+
+    def test_pending_classification_interrupt_preserves_eligibility_refusal_and_reuse(self):
+        for command, outcome in (("interrupted_eligible", "eligible"), ("interrupted_refuse", "refused")):
+            with self.subTest(outcome=outcome), self.host() as host:
+                response = {"kind": outcome, "request_id": "one"}
+                if outcome == "refused":
+                    response["reason"] = "unsupported_command"
+                self.assertEqual(host.classify(command), response)
+                if outcome == "eligible":
+                    send(host.data, {"kind": "invoke", "request_id": "one"})
+                    self.assertEqual(receive(host.data), {"kind": "accepted", "request_id": "one"})
+                    self.assertEqual(receive(host.data), {"kind": "complete", "request_id": "one", "exit_code": 0})
+                    host.release()
+                host.invoke("fail", "two")
+                self.assertEqual(receive(host.data), {"kind": "complete", "request_id": "two", "exit_code": 17})
+                host.release("two")
+                self.assertEqual(host.shutdown(), 0)
 
     def test_pending_application_interrupt_preserves_output_status_and_reuse(self):
         cases = [("interrupted_output", b"ok"), ("interrupted_status", b""),

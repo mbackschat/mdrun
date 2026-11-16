@@ -310,7 +310,11 @@ public final class Worker {
                 if (isStopped()) {
                     return;
                 }
-                application = factory.create();
+                try {
+                    application = factory.create();
+                } finally {
+                    Thread.interrupted();
+                }
                 if (application == null) {
                     stop("initialization_failed");
                     return;
@@ -358,6 +362,8 @@ public final class Worker {
             } catch (Throwable ignored) {
                 stop("classification_failed");
                 return;
+            } finally {
+                Thread.interrupted();
             }
             try {
                 Map<String, Object> response;

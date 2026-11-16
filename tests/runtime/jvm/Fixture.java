@@ -20,6 +20,10 @@ public final class Fixture implements Application {
     private static Invocation previous;
     private static String lateOperation;
 
+    public Fixture() {
+        if ("interrupted_factory".equals(System.getenv("MDRUN_JVM_FIXTURE"))) Thread.currentThread().interrupt();
+    }
+
     public static void main(String[] args) {
         try {
             Worker.run(Path.of(args[0]), Fixture::new);
@@ -72,6 +76,15 @@ public final class Fixture implements Application {
 
     @Override
     public Classification classify(List<String> argv) {
+        if (Thread.currentThread().isInterrupted()) throw new AssertionError("previous callback interrupt leaked into classification");
+        if (!argv.isEmpty() && argv.getFirst().equals("interrupted_eligible")) {
+            Thread.currentThread().interrupt();
+            return new Classification.Eligible();
+        }
+        if (!argv.isEmpty() && argv.getFirst().equals("interrupted_refuse")) {
+            Thread.currentThread().interrupt();
+            return new Classification.Refused("unsupported_command");
+        }
         if (!argv.isEmpty() && argv.getFirst().equals("environment")) {
             return new Classification.Refused("observes_shell_environment");
         }
@@ -81,6 +94,7 @@ public final class Fixture implements Application {
 
     @Override
     public int invoke(Invocation request) throws Exception {
+        if (Thread.currentThread().isInterrupted()) throw new AssertionError("classification interrupt leaked into invocation");
         try {
             request.argv().add("mutated");
             throw new IllegalStateException("request argv must be immutable");
