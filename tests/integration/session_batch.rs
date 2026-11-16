@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::fs;
 use std::io::{BufRead, BufReader};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -50,7 +50,7 @@ fn listener_state(worker: &Value) -> Value {
 
 fn assert_excluded(address: SocketAddr) {
     assert_eq!(
-        TcpListener::bind(address).unwrap_err().kind(),
+        crate::ports::bind(address).unwrap_err().kind(),
         std::io::ErrorKind::AddrInUse
     );
 }
@@ -229,7 +229,7 @@ fn warm_slots_cover_worker_shutdown_and_cleanup_before_queued_admission() {
             std::io::ErrorKind::ConnectionRefused
         );
     }
-    assert!(TcpListener::bind(address).is_ok());
+    assert!(crate::ports::bind(address).is_ok());
     for entry in fs::read_dir(&fixture.0).unwrap() {
         let name = entry.unwrap().file_name();
         let name = name.to_string_lossy();

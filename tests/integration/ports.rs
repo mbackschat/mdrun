@@ -2,7 +2,7 @@ use std::net::{SocketAddr, TcpListener};
 use std::sync::{Mutex, MutexGuard};
 
 // The live socket excludes other bind(2) callers during preparation; this gate
-// excludes this binary's other fixture allocations during close-to-ready handoff.
+// excludes this binary's other fixture allocations and probes during close-to-ready handoff.
 static ALLOCATION: Mutex<()> = Mutex::new(());
 
 pub(super) struct Reservation {
@@ -27,6 +27,11 @@ impl Reservation {
         self.address
     }
 
+    pub(super) fn probe(&self) -> std::io::Result<()> {
+        // This reservation already owns ALLOCATION; taking it again would deadlock.
+        TcpListener::bind(self.address).map(drop)
+    }
+
     pub(super) fn release_listener(&mut self) {
         assert!(
             self.listener.take().is_some(),
@@ -43,6 +48,52 @@ impl Reservation {
 pub(super) fn listener() -> TcpListener {
     let mut reservation = Reservation::new();
     reservation.listener.take().unwrap()
+}
+
+pub(super) fn bind(address: SocketAddr) -> std::io::Result<TcpListener> {
+    let _allocation = ALLOCATION.lock().unwrap_or_else(|error| error.into_inner());
+    TcpListener::bind(address)
+}
+
+#[test]
+fn address_probe_cannot_bind_during_another_reservations_handoff() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let mut reservation = Reservation::new();
+    let address = reservation.address();
+    reservation.release_listener();
+    let (entered, entering) = mpsc::channel();
+    let (observed, observation) = mpsc::channel();
+    let (release, released) = mpsc::channel();
+    let probe = std::thread::spawn(move || {
+        entered.send(()).unwrap();
+        let listener = bind(address);
+        observed
+            .send(listener.as_ref().map(|_| ()).map_err(|error| error.kind()))
+            .unwrap();
+        // A descheduled probe can retain its successful bind until after the receiver starts.
+        released.recv().unwrap();
+        drop(listener);
+    });
+    entering.recv_timeout(Duration::from_secs(2)).unwrap();
+    let premature = observation.recv_timeout(Duration::from_millis(100));
+    let receiver = TcpListener::bind(address);
+    drop(reservation);
+    release.send(()).unwrap();
+    let result = match premature {
+        Ok(result) => result,
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            observation.recv_timeout(Duration::from_secs(2)).unwrap()
+        }
+        Err(error) => panic!("probe disconnected: {error}"),
+    };
+    probe.join().unwrap();
+    assert!(
+        receiver.is_ok(),
+        "probe claimed the reserved handoff endpoint {address}: {receiver:?}"
+    );
+    assert_eq!(result, Err(std::io::ErrorKind::AddrInUse));
 }
 
 #[test]

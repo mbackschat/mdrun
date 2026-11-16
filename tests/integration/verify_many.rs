@@ -2,7 +2,6 @@ use serde_json::{Value, json};
 use std::cell::Cell;
 use std::fs;
 use std::io::{Read, Write};
-use std::net::TcpListener;
 use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStrExt;
 #[cfg(target_os = "linux")]
@@ -573,7 +572,7 @@ fn declared_resources_serialize_unless_sharing_is_explicit_and_keep_one_batch_le
         fixture.wait_file("a.started");
         drop(reservation);
         assert_eq!(
-            TcpListener::bind(address).unwrap_err().kind(),
+            crate::ports::bind(address).unwrap_err().kind(),
             std::io::ErrorKind::AddrInUse
         );
         if share {
@@ -584,7 +583,7 @@ fn declared_resources_serialize_unless_sharing_is_explicit_and_keep_one_batch_le
         fixture.write("a.go", b"");
         fixture.wait_file("b.started");
         assert_eq!(
-            TcpListener::bind(address).unwrap_err().kind(),
+            crate::ports::bind(address).unwrap_err().kind(),
             std::io::ErrorKind::AddrInUse
         );
         fixture.write("b.go", b"");
@@ -603,7 +602,7 @@ fn declared_resources_serialize_unless_sharing_is_explicit_and_keep_one_batch_le
                 report["cleanup"]["custodian_pid"]
             );
         }
-        assert!(TcpListener::bind(address).is_ok());
+        assert!(crate::ports::bind(address).is_ok());
     }
 }
 
@@ -815,6 +814,50 @@ impl OwnerLossCleanup<'_> {
             serde_json::from_slice(&fs::read(path.join("custody.status.json")).ok()?).ok()
         })
     }
+
+    fn diagnostics(&self) -> String {
+        let bind = crate::ports::bind(self.address)
+            .map(|_| "available".to_owned())
+            .unwrap_or_else(|error| format!("{error:?}"));
+        let actors: Vec<_> = self
+            .actors
+            .iter()
+            .map(|actor| (actor, super::session_owner_loss::observe(actor.pid)))
+            .collect();
+        let status = self.status();
+        let anchors: Vec<_> = status
+            .as_ref()
+            .and_then(|state| state["groups"].as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|group| group["anchor_pid"].as_i64())
+            .map(|pid| (pid, super::session_owner_loss::observe(pid as i32)))
+            .collect();
+        format!(
+            "status: {status:?}; listener {}: {bind}; actors: {actors:?}; anchors: {anchors:?}; fixture stderr: {:?}",
+            self.address,
+            fs::read_to_string(self.fixture.0.join("stderr"))
+        )
+    }
+
+    fn wait_released(&self) {
+        let deadline = Instant::now() + Duration::from_secs(8);
+        loop {
+            if self
+                .status()
+                .is_some_and(|state| state["status"] == "released")
+                && !super::session_owner_loss::excluded(self.address)
+            {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "deadline expired: whole-batch custody released; {}",
+                self.diagnostics()
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
 }
 
 impl Drop for OwnerLossCleanup<'_> {
@@ -837,8 +880,9 @@ impl Drop for OwnerLossCleanup<'_> {
             if Instant::now() >= deadline {
                 self.fixture.1.set(true);
                 eprintln!(
-                    "batch owner-loss custody evidence retained: {}",
-                    self.fixture.0.display()
+                    "batch owner-loss custody evidence retained: {}; {}",
+                    self.fixture.0.display(),
+                    self.diagnostics()
                 );
                 break;
             }
@@ -879,9 +923,11 @@ fn owner_loss_keeps_shared_exclusion_until_both_surviving_payload_groups_are_gon
         address,
         actors: Vec::new(),
     };
+    // Release the allocation gate before cleanup probes if readiness panics.
+    let handoff_reservation = reservation;
     fixture.wait_file("a.started");
     fixture.wait_file("b.started");
-    drop(reservation);
+    drop(handoff_reservation);
     cleanup.actors = ["a", "b"]
         .map(|id| {
             let pid = fs::read_to_string(fixture.0.join(format!("{id}.pid")))
@@ -901,7 +947,7 @@ fn owner_loss_keeps_shared_exclusion_until_both_surviving_payload_groups_are_gon
         cleanup.actors.iter().any(|actor| actor.alive()),
         "no post-owner-loss survival window observed"
     );
-    wait_until("both batch payload groups gone", || {
+    wait_until("both batch payload identities gone", || {
         let alive = cleanup.actors.iter().any(|actor| actor.alive());
         if alive {
             assert!(
@@ -911,12 +957,7 @@ fn owner_loss_keeps_shared_exclusion_until_both_surviving_payload_groups_are_gon
         }
         !alive
     });
-    wait_until("whole-batch custody released", || {
-        cleanup
-            .status()
-            .is_some_and(|status| status["status"] == "released")
-            && !excluded(address)
-    });
+    cleanup.wait_released();
     assert!(!fixture.0.join("a.expired").exists());
     assert!(!fixture.0.join("b.expired").exists());
 }

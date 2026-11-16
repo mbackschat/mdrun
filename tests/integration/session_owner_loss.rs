@@ -148,7 +148,7 @@ fn read_process(directory: &Path, name: &str) -> Process {
 }
 
 pub(super) fn excluded(address: SocketAddr) -> bool {
-    match TcpListener::bind(address) {
+    match crate::ports::bind(address) {
         Ok(_) => false,
         Err(error) => {
             assert_eq!(error.kind(), io::ErrorKind::AddrInUse);

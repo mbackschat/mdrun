@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::net::{SocketAddr, TcpListener};
+use std::net::SocketAddr;
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::net::UnixStream;
@@ -414,8 +414,9 @@ fn selected_listener_endpoint_stays_reserved_until_custodian_handoff() {
     let directory = Directory::new();
     let reservation = super::ports::Reservation::new();
     let address = reservation.address();
-    assert!(
-        excluded(address),
+    assert_eq!(
+        reservation.probe().unwrap_err().kind(),
+        std::io::ErrorKind::AddrInUse,
         "selected endpoint became available before handoff"
     );
     let mut controller = Controller::start(&directory.0, reservation, 30000);
@@ -424,7 +425,7 @@ fn selected_listener_endpoint_stays_reserved_until_custodian_handoff() {
     assert!(!excluded(address));
 }
 fn excluded(address: SocketAddr) -> bool {
-    match TcpListener::bind(address) {
+    match crate::ports::bind(address) {
         Ok(_) => false,
         Err(error) => {
             assert_eq!(error.kind(), std::io::ErrorKind::AddrInUse);
