@@ -3,6 +3,7 @@
 | Item | Reopening condition |
 | --- | --- |
 | Native Windows qualification | Owner activates it; qualify native shell/context behavior and descendant ownership on Windows before claiming support |
+| Custody of ordinary shell-created process groups and daemonized descendants | A concrete consumer requires it and a qualified platform mechanism can retain ownership without silently changing terminal behavior; current managed commands must keep descendants in assigned groups |
 | Multiple accelerated bindings in one session | A concrete consumer requires them after single-binding lifecycle and identity guarantees are established |
 | Machine-global daemon or shared worker pool | Measured session-scoped startup cost justifies the added discovery, ownership and isolation contract |
 | Runtimes beyond JVM, Node and Python | A cooperative application and parity/lifecycle qualification justify an additional SDK |

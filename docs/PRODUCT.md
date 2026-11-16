@@ -36,8 +36,8 @@ Fast execution is the ordinary development route for qualified cooperative bindi
 | Streams | Lazy input, streamed binary output, bounded backpressure and descriptor fidelity; frame bounds are not total-input bounds |
 | Sequential reuse | Invocation ownership extends through output flush and client acknowledgement, including cold calls |
 | Failures | Application status is distinct from infrastructure/cleanup status; masked transport failures still fail the session |
-| Ownership | Cancellation, owner loss, worker failure and descendant exit are observed; uncertain cleanup invalidates reuse and success |
-| Resource exclusion | Generic external resource identities remain excluded through observed cleanup, including parent loss |
+| Ownership | Cancellation, owner loss, worker failure and descendant exit within assigned process groups are observed; uncertain cleanup invalidates reuse and success |
+| Resource exclusion | Generic external resource identities remain excluded through observed cleanup of assigned groups, including parent loss |
 | Sessions | Sequential worker per document; an outer authoring session may span multiple CLI processes |
 | Scheduling | Bounded parallel independent documents; failure stops admission and drains launched peers |
 | Reporting | Versioned machine-readable application/infrastructure results, route counts/reasons, worker starts, identities and preparation/replay timing; no credentials or report data in captured command output |
@@ -46,4 +46,4 @@ Fast execution is the ordinary development route for qualified cooperative bindi
 
 Target macOS and Linux first. A small standalone native host is required; target runtimes remain external. More than one host process may implement supervision/forwarding. Qualify exact OS/architecture versions and a representative binary-size budget before release. Windows qualification is [deferred](DEFERRED.md).
 
-The process model covers cooperative development commands, not a security sandbox. Deliberately escaped ownership and host/OS failure need explicit documented limits. No global daemon, bundled language runtimes, package manager or plugin marketplace is required.
+Managed scripts and applications must keep descendants in their assigned process group and stop/await background jobs for successful orderly completion. Shell monitor mode (`set -m`), independently created process groups and daemonization are unsupported by the portable backend. These can be ordinary application features; the limitation does not depend on hostile intent. The host cleans and observes assigned groups, cannot reliably detect every group departure, and does not contain arbitrary descendant trees. Outside this cooperation boundary, a descendant may survive a successful report and released exclusion. The owner accepted this boundary on 2026-11-16. Host/OS failure remains outside the guarantee. No global daemon, bundled language runtimes, package manager or plugin marketplace is required.

@@ -709,7 +709,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--role", choices=["qualify", "driver", "job", "author", "payload", "peer", "background"], default="qualify")
     parser.add_argument("--mdrun", type=Path, required=True)
-    parser.add_argument("--case", choices=CASES)
+    parser.add_argument("--case", choices=CASES,
+                        help="Explicit case; background_group diagnoses unsupported job-control custody and is excluded by default")
     parser.add_argument("--directory", type=Path)
     parser.add_argument("--results", type=Path)
     parser.add_argument("--gate", type=int)

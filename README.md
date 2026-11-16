@@ -12,6 +12,8 @@ Inspired by [Showboat](https://github.com/simonw/showboat), created by Simon Wil
 
 Current status: the seven document commands and read-only command discovery pass macOS/Linux qualification with cold execution. Experimental native sessions and the cooperative Node SDK pass initial macOS/Linux controls. The [JVM SDK](sdk/jvm/README.md) and dependency-free [Python SDK](sdk/python/README.md) are implemented and under qualification; APIs and consumer readiness remain in progress. See the [execution checklist](docs/plans/execution.md) for outstanding gates.
 
+Managed sessions require cooperative scripts and applications whose descendants stay in their assigned process group. Shell monitor mode (`set -m`), independently created groups and daemonization are unsupported; mdrun cannot reliably detect every violation or contain arbitrary process trees. Outside this boundary, a descendant may survive a successful report and released resource exclusion. See the [ownership contract](docs/plans/session-protocol.md#ownership-and-external-resources).
+
 ## Why a new implementation?
 
 | Goal | Motivation |
