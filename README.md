@@ -134,6 +134,8 @@ The binding identifies a prepared worker and an independent cold launcher. An ad
 
 This is opt-in application integration, not automatic acceleration of every CLI. Eligible calls can share one sequential worker per session; unsupported contexts select the cold launcher before acceptance. Accepted calls are never retried. `--require-warm` makes an unexpected cold route fail, and reports show route counts and reasons. See the [session guide](docs/guides/sessions.md), [JVM SDK](sdk/jvm/README.md), [Node SDK](sdk/node/README.md) and [Python SDK](sdk/python/README.md).
 
+For reproducible cold/warm comparisons and measured workload results, see [performance measurements](docs/performance.md).
+
 Managed scripts and applications must keep descendants in their assigned process group and stop/await background work for successful orderly completion. Shell monitor mode (`set -m`), independent process groups and daemonization are unsupported. The host cannot detect every departure; a descendant outside this boundary may survive a successful report and released exclusion. The [ownership contract](docs/plans/session-protocol.md#ownership-and-external-resources) defines that limit.
 
 ## Why another implementation?

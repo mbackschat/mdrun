@@ -229,7 +229,7 @@ pub fn read_message<R: Read, T: DeserializeOwned>(reader: &mut R) -> Result<Opti
 pub fn write_message<W: Write, T: Serialize>(writer: &mut W, message: &T) -> Result<(), String> {
     const PREFIX: usize = 4;
 
-    /// Encodes after a reserved length prefix so the frame leaves in one write; a separate prefix write invites write-write-read Nagle stalls on TCP worker sockets.
+    /// Combines the prefix and payload to avoid a separate small TCP write; `write_all` still handles short writes and interruptions.
     struct BoundedPayload(Vec<u8>);
 
     impl Write for BoundedPayload {

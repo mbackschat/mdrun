@@ -20,7 +20,35 @@ The measured host SHA-256 is `80846ff7dad8cc5a6062846c96a2259c1ebd6ca349ac90c615
 
 The [measurement harness](../tests/performance/compare.py) records raw per-session times, host and prepared-file digests, document hashes, actual route counts and report durations in its JSON output. It checks the host, prepared directory and launch executables before and after every timed process, outside the measured interval. Installed runtime libraries and operating-system scheduling remain environmental inputs; this is a local comparison, not a controlled hardware benchmark or a promised ratio. The workload intentionally has little application work, so applications dominated by computation or I/O may benefit less or not at all.
 
-## Repeat with prepared release fixtures
+## Coordinator wakeup measurements
+
+On 2026-11-16, a separate local comparison measured the host after simplification commit `087c81c` against the event-driven coordinator. Both optimized executables use Rust 1.98.1 on macOS arm64, Node 26.10.0 and the same SDK/fixture/runtime/harness bytes. No concurrent project build or qualification suite ran during either measurement. Each host ran three sessions, each with twenty tiny calls returning literal `ok`, followed by an unpaused 128 MiB stream. The [measurement harness](../tests/performance/wakeup.py) requires the fixed stream length/SHA-256, every call warm and successful, exactly one worker, clean cleanup and unchanged artifact identities before accepting timings.
+
+| Measurement | Fixed-tick host | Event-driven host |
+| --- | ---: | ---: |
+| Median forwarded tiny-call latency | 83.04 ms | 12.27 ms |
+| 95th-percentile forwarded tiny-call latency | 137.57 ms | 16.34 ms |
+| Median stream throughput | 6.10 MiB/s | 22.78 MiB/s |
+
+Tiny-call timing includes native client process startup and the complete forwarding/protocol round trip, but excludes session/worker startup. Stream timing includes the fixture's per-frame progress-file writes and delivery into a regular file; it is not a raw socket-bandwidth benchmark. Every sample retains complete session time separately. The local median improvements are approximately 6.77× for tiny-call latency and 3.73× for this stream workload; they do not predict arbitrary application speedups. The broker and custodian retain their separate lifecycle polling.
+
+| Measured artifact | SHA-256 |
+| --- | --- |
+| Before host, production source `087c81c` | `cc5fd1e1be9db85902f3c99ebc19876f4e95fc5ddda36465fd4349e395a90adf` |
+| After host, event-driven implementation | `a14253152651029e381c5170af6b4a260247478273d30caa2b436eed673a6f58` |
+| Common SDK/fixture/runtime artifact identity | `2668c340f9ec9bd3c9144bf9a820dd4921e9a758c21a12a661b947d94e60d835` |
+
+Repeat one host at a time on an otherwise idle system; save each output separately and compare only runs with identical non-host identities:
+
+```sh
+python3 tests/performance/wakeup.py \
+  --mdrun /absolute/mdrun --node /absolute/node \
+  --samples 3 --calls 20 --output /results/wakeup.json
+```
+
+The harness retains failed workspaces for diagnosis. Its finite deadlines reject stalled sessions instead of recording a partial result. Output, routes and cleanup qualify each sample independently of its speed; performance is recorded rather than enforced through fragile wall-clock CI thresholds.
+
+## Repeat complete sessions with prepared release fixtures
 
 First prepare the three synthetic applications using the [SDK consumer qualifier](sdk-distribution.md#reproduce-and-qualify-sdk-assets). Then measure one runtime at a time, on an otherwise idle host:
 

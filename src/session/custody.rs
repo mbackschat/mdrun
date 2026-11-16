@@ -249,6 +249,10 @@ impl Custody {
         &self.status_path
     }
 
+    pub(super) fn descriptor(&self) -> BorrowedFd<'_> {
+        self.control.as_fd()
+    }
+
     pub(super) fn request(
         &mut self,
         request: &OwnerRequest,

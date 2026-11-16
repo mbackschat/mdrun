@@ -1,8 +1,18 @@
 # Implementation plan
 
-Status: document CLI, discovery, managed sessions and all three SDKs are implemented and pre-release qualification passes for candidate `f643259`. The public version-1 contract is frozen for 0.1.0 after independent review of the qualified cooperative execution boundary. Work is at the owner's stop-before-release checkpoint; the [execution checklist](plans/execution.md) owns the remaining publication and public-installation gates.
+Status: document CLI, discovery, managed sessions and all three SDKs are implemented. Candidate `f643259` passed pre-release qualification; the owner subsequently approved correctness fixes and measured coordinator improvements after an external simplification pass. Those changes require fresh qualification. The public version-1 contract remains frozen for 0.1.0, and the publication hold remains in place.
 
 Publication boundary, 2026-11-16: the owner requested a stop before release. Complete implementation and non-publishing qualification, then hand back the candidate for review. Do not create a release tag, publish GitHub assets or publish a Homebrew formula until the owner resumes that work. Actual public-download and Homebrew publication checks remain explicit release gates.
+
+## Approved simplification follow-up
+
+- [x] Preserve owner read/write permissions for batch publication files, output spools and reports under owner-bit-masking umasks; preserve the complete accepted cleanup-timeout domain with failing regressions before fixes.
+- [x] Measure the post-simplification host before changing coordinator waits, then replace fixed per-frame waits with event-driven wakeups while retaining bounded queues, deadline/control priority and cleanup semantics. Record byte/route/identity-checked [before/after evidence](performance.md#coordinator-wakeup-measurements).
+- [ ] Independently review the wakeup and teardown changes, then complete fresh macOS/Linux runtime, SDK, streaming, terminal, differential and non-publishing package qualification for an identified revision.
+
+Read-only review did not establish a reachable unbounded standalone pending queue: production launches are constrained and failed launches abort. The internally generated custodian configuration is validated and written into a protected directory; extra type/size checks remain optional defensive consistency, rather than a demonstrated release blocker. Broader standalone/scoped custody unification remains outside this follow-up.
+
+## Earlier candidate evidence
 
 Final non-publishing evidence: [run 43874321121](https://github.com/mbackschat/mdrun/actions/runs/43874321121) passes all eleven qualification/build/SDK/assembly jobs at `f643259f9ddbed1936c1600ccdcfe14dd4f68d3b`. This includes macOS arm64 and Linux x86_64/arm64 runtimes and Showboat differentials, all native archives, actual Debian/Fedora package installation/removal, thirteen manuals, isolated SDK archive preparation and `uv` wheel consumption through the packaged host. The first attempt could not acquire macOS ARM runners and executed no macOS steps; one same-revision infrastructure retry succeeded, preserving successful Linux results. Publication was skipped. [Distribution](distribution.md) records artifact sizes, identities and the held public-download/Homebrew checks. Later evidence-only documentation edits do not change these artifacts' source identity; the eventual release tag must pass its own exact-revision workflow.
 

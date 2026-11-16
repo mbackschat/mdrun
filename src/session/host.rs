@@ -22,6 +22,7 @@ use super::client::{ClientConfig, NativeRequest, Reply};
 use super::config::{Binding, Connect, WorkerConfig, cleanup_grace};
 use super::context::{NativeContext, SESSION_ENV};
 use super::custody::{self, Custody, CustodyConfig, CustodyEvent, PayloadStatus, SpawnSpec};
+use super::wakeup::{Notifier, Wakeup};
 use super::wire::{self, Frame, Role, Terminal};
 use super::{Mode, Options};
 
@@ -122,7 +123,7 @@ struct Reader<S: Socket> {
 }
 
 impl<S: Socket> Reader<S> {
-    fn new(socket: S) -> Result<Self, String> {
+    fn new(socket: S, notifier: Notifier) -> Result<Self, String> {
         let mut input = socket
             .duplicate()
             .map_err(|_| "cannot duplicate session socket".to_owned())?;
@@ -131,7 +132,11 @@ impl<S: Socket> Reader<S> {
             loop {
                 let frame = wire::read_frame(&mut input);
                 let done = !matches!(frame, Ok(Some(_)));
-                if sender.send(frame).is_err() || done {
+                if sender.send(frame).is_err() {
+                    break;
+                }
+                notifier.notify();
+                if done {
                     break;
                 }
             }
@@ -154,7 +159,7 @@ struct Writer<S: Socket, T> {
 }
 
 impl<S: Socket, T: Serialize + Send + 'static> Writer<S, T> {
-    fn new(socket: S) -> Result<Self, String> {
+    fn new(socket: S, notifier: Notifier) -> Result<Self, String> {
         let mut output = socket
             .duplicate()
             .map_err(|_| "cannot duplicate session socket".to_owned())?;
@@ -164,7 +169,11 @@ impl<S: Socket, T: Serialize + Send + 'static> Writer<S, T> {
             while let Ok(message) = messages.recv() {
                 let result = wire::write_message(&mut output, &message);
                 let failed = result.is_err();
-                if completed.send(result).is_err() || failed {
+                if completed.send(result).is_err() {
+                    break;
+                }
+                notifier.notify();
+                if failed {
                     break;
                 }
             }
@@ -177,21 +186,26 @@ impl<S: Socket, T: Serialize + Send + 'static> Writer<S, T> {
         })
     }
 
-    fn flush(&mut self, pending: &mut Option<T>) -> Result<(), String> {
+    fn flush(&mut self, pending: &mut Option<T>) -> Result<bool, String> {
+        let mut progress = false;
         while let Ok(result) = self.delivered.try_recv() {
             self.inflight = self.inflight.saturating_sub(1);
             result?;
+            progress = true;
         }
         if let Some(message) = pending.take() {
             match self.outgoing.try_send(message) {
-                Ok(()) => self.inflight += 1,
+                Ok(()) => {
+                    self.inflight += 1;
+                    progress = true;
+                }
                 Err(TrySendError::Full(message)) => *pending = Some(message),
                 Err(TrySendError::Disconnected(_)) => {
                     return Err("session writer stopped".to_owned());
                 }
             }
         }
-        Ok(())
+        Ok(progress)
     }
 }
 
@@ -235,16 +249,18 @@ struct Handshake {
     next_id: u64,
     sender: SyncSender<(u64, Result<Connection, String>)>,
     completed: Receiver<(u64, Result<Connection, String>)>,
+    notifier: Notifier,
 }
 
 impl Handshake {
-    fn new() -> Self {
+    fn new(notifier: Notifier) -> Self {
         let (sender, completed) = mpsc::sync_channel(2);
         Self {
             pending: HashMap::new(),
             next_id: 0,
             sender,
             completed,
+            notifier,
         }
     }
 
@@ -253,11 +269,14 @@ impl Handshake {
         listener: &UnixListener,
         identity: &Identity,
         deadline: Instant,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
+        let mut progress = false;
         loop {
             let (mut socket, _) = match listener.accept() {
                 Ok(connection) => connection,
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => return Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    return Ok(progress);
+                }
                 Err(_) => return Err("cannot accept native session client".to_owned()),
             };
             if self.pending.len() >= 2 {
@@ -276,6 +295,7 @@ impl Handshake {
                 .map_err(|_| "cannot set native write deadline".to_owned())?;
             let id = self.next_id;
             self.next_id += 1;
+            progress = true;
             self.pending.insert(
                 id,
                 socket
@@ -284,6 +304,7 @@ impl Handshake {
             );
             let identity = identity.clone();
             let sender = self.sender.clone();
+            let notifier = self.notifier.clone();
             thread::spawn(move || {
                 let result = (|| {
                     let hello = wire::read_frame(&mut socket)?
@@ -302,6 +323,7 @@ impl Handshake {
                 })()
                 .map_err(|_: String| "invalid native client handshake".to_owned());
                 let _ = sender.send((id, result));
+                notifier.notify();
             });
         }
     }
@@ -343,14 +365,15 @@ struct Invocation {
 }
 
 impl Invocation {
-    fn new(connection: Connection) -> Result<Self, String> {
+    fn new(connection: Connection, notifier: Notifier) -> Result<Self, String> {
         let input = Reader::new(
             connection
                 .socket
                 .try_clone()
                 .map_err(|_| "cannot duplicate native socket".to_owned())?,
+            notifier.clone(),
         )?;
-        let output = Writer::new(connection.socket)?;
+        let output = Writer::new(connection.socket, notifier)?;
         Ok(Self {
             request: connection.request,
             descriptors: connection.descriptors,
@@ -666,6 +689,7 @@ pub fn run_prepared(
         executable,
         failure_observer,
     } = prepared;
+    let wakeup = Wakeup::new().map_err(|_| "cannot create coordinator wakeup")?;
     let mut directory = PrivateDirectory::new()?;
     let bin = directory.path.join("bin");
     fs::DirBuilder::new()
@@ -730,6 +754,7 @@ pub fn run_prepared(
         ),
     };
     directory.retained = true;
+    custody.set_notifier(wakeup.notifier());
     let custody_status_path = custody.status_path().to_owned();
     let mut state = State::new(failure_observer);
     let mut worker = None;
@@ -780,6 +805,7 @@ pub fn run_prepared(
                 deadline,
                 &mut custody,
                 &mut state,
+                &wakeup,
             )?);
         }
         replay_started = Some(Instant::now());
@@ -799,6 +825,7 @@ pub fn run_prepared(
                 listener: &listener,
                 identity: &identity,
                 deadline,
+                wakeup: &wakeup,
             },
             &mut custody,
             &mut state,
@@ -871,22 +898,27 @@ fn start_worker(
     session_deadline: Instant,
     custody: &mut CustodyAccess,
     state: &mut State,
+    wakeup: &Wakeup,
 ) -> Result<Worker, String> {
     let mut data = None;
     let mut control = None;
     while data.is_none() || control.is_none() {
+        wakeup.clear().map_err(|_| "coordinator wakeup failed")?;
+        let mut progress = false;
         remaining(deadline)?;
         if let Some(event) = custody
-            .poll_event(TICK)
+            .poll_event(Duration::ZERO)
             .map_err(|_| "worker startup custody control failed")?
         {
             state.event(event, None);
+            progress = true;
         }
         if state.infrastructure.is_some() {
             return Err("worker exited before readiness".to_owned());
         }
         match listener.accept() {
             Ok((mut socket, _)) => {
+                progress = true;
                 socket
                     .set_nonblocking(false)
                     .map_err(|_| "cannot configure worker socket")?;
@@ -920,6 +952,9 @@ fn start_worker(
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
             Err(_) => return Err("cannot accept worker connection".to_owned()),
         }
+        if !progress {
+            wait_for_activity(wakeup, custody, Some(listener.as_fd()), deadline)?;
+        }
     }
     let data = data.unwrap();
     let control = control.unwrap();
@@ -936,12 +971,14 @@ fn start_worker(
         writer: Writer::new(
             data.try_clone()
                 .map_err(|_| "cannot duplicate worker socket")?,
+            wakeup.notifier(),
         )?,
-        data: Reader::new(data)?,
-        control: Reader::new(control)?,
+        data: Reader::new(data, wakeup.notifier())?,
+        control: Reader::new(control, wakeup.notifier())?,
         pending: None,
     };
     loop {
+        wakeup.clear().map_err(|_| "coordinator wakeup failed")?;
         remaining(deadline)?;
         if worker.control.frames.try_recv().is_ok() {
             return Err(CONTROL_ERROR.to_owned());
@@ -983,15 +1020,32 @@ fn start_worker(
             Err(TryRecvError::Empty) => {}
         }
         if let Some(event) = custody
-            .poll_event(TICK)
+            .poll_event(Duration::ZERO)
             .map_err(|_| "worker startup custody control failed")?
         {
             state.event(event, None);
-        }
-        if state.infrastructure.is_some() {
-            return Err("worker exited before readiness".to_owned());
+            if state.infrastructure.is_some() {
+                return Err("worker exited before readiness".to_owned());
+            }
+        } else {
+            wait_for_activity(wakeup, custody, None, deadline)?;
         }
     }
+}
+
+fn wait_for_activity(
+    wakeup: &Wakeup,
+    custody: &CustodyAccess,
+    listener: Option<BorrowedFd<'_>>,
+    deadline: Instant,
+) -> Result<(), String> {
+    wakeup
+        .wait(
+            remaining(deadline)?,
+            listener.into_iter().chain(custody.descriptor()),
+        )
+        .map_err(|_| "cannot wait for coordinator activity")?;
+    Ok(())
 }
 
 struct Scope<'a> {
@@ -1002,6 +1056,7 @@ struct Scope<'a> {
     listener: &'a UnixListener,
     identity: &'a Identity,
     deadline: Instant,
+    wakeup: &'a Wakeup,
 }
 
 fn coordinate(
@@ -1018,29 +1073,35 @@ fn coordinate(
         listener,
         identity,
         deadline,
+        wakeup,
     } = scope;
-    let mut handshakes = Handshake::new();
+    let mut handshakes = Handshake::new(wakeup.notifier());
     let mut active: Option<Invocation> = None;
     let mut deferred: Option<Connection> = None;
     let mut seen = HashSet::new();
     let mut shutdown_deadline = None;
     loop {
+        // Clear before scanning every source: enqueue-then-notify cannot be lost
+        // between an empty queue observation and the following descriptor wait.
+        wakeup.clear().map_err(|_| "coordinator wakeup failed")?;
+        let mut progress = false;
         remaining(deadline)?;
         if shutdown_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
             return Err("worker orderly shutdown deadline expired".to_owned());
         }
         if let Some(event) = custody
-            .poll_event(TICK)
+            .poll_event(Duration::ZERO)
             .map_err(|_| "native custody control failed")?
         {
             state.event(event, active.as_mut());
+            progress = true;
         }
         if let Some(reason) = &state.infrastructure {
             return Err(reason.clone());
         }
-        finish_release(&mut active)?;
+        progress |= finish_release(&mut active)?;
         if let Some(worker) = worker.as_mut() {
-            worker.writer.flush(&mut worker.pending)?;
+            progress |= worker.writer.flush(&mut worker.pending)?;
             match worker.control.frames.try_recv() {
                 Ok(_) if !state.shutdown => return Err(CONTROL_ERROR.to_owned()),
                 Ok(Ok(None)) | Err(TryRecvError::Disconnected) if state.shutdown => {}
@@ -1056,6 +1117,7 @@ fn coordinate(
             {
                 match worker.data.frames.try_recv() {
                     Ok(Ok(Some(Frame::Refused { request_id, reason }))) => {
+                        progress = true;
                         let invocation = active
                             .as_mut()
                             .ok_or("worker refused outside an invocation")?;
@@ -1067,7 +1129,10 @@ fn coordinate(
                         }
                         route_cold(options, binding, &reason, invocation, custody, state)?;
                     }
-                    Ok(Ok(Some(frame))) => worker_frame(frame, active.as_mut(), worker, state)?,
+                    Ok(Ok(Some(frame))) => {
+                        progress = true;
+                        worker_frame(frame, active.as_mut(), worker, state)?;
+                    }
                     Ok(Ok(None)) | Err(TryRecvError::Disconnected) if state.shutdown => {}
                     Ok(Ok(None)) | Err(TryRecvError::Disconnected) => {
                         return Err("worker data channel closed".to_owned());
@@ -1078,7 +1143,7 @@ fn coordinate(
             }
         }
         if !state.shutdown {
-            handshakes.accept(listener, identity, deadline)?;
+            progress |= handshakes.accept(listener, identity, deadline)?;
             loop {
                 let connection = if active.is_none() && deferred.is_some() {
                     deferred.take().unwrap()
@@ -1089,6 +1154,7 @@ fn coordinate(
                     handshakes.pending.remove(&id);
                     result?
                 };
+                progress = true;
                 let Some(connection) = receive_admission(&active, &mut deferred, connection)?
                 else {
                     continue;
@@ -1096,7 +1162,7 @@ fn coordinate(
                 if !seen.insert(connection.request.request_id.clone()) {
                     return Err("duplicate invocation identity".to_owned());
                 }
-                let mut invocation = Invocation::new(connection)?;
+                let mut invocation = Invocation::new(connection, wakeup.notifier())?;
                 let reason = baseline_cold.map(str::to_owned).or_else(|| {
                     invocation
                         .request
@@ -1150,17 +1216,21 @@ fn coordinate(
                         signal,
                     });
                     invocation.phase = Phase::ColdAcknowledgement;
+                    progress = true;
                     state.application_statuses.push(json!({"request_id":invocation.id(),"route":"cold","exit_code":exit_code,"signal":signal}));
                 }
             }
-            invocation.output.flush(&mut invocation.pending)?;
+            progress |= invocation.output.flush(&mut invocation.pending)?;
             if worker
                 .as_ref()
                 .is_none_or(|worker| worker.pending.is_none())
                 && invocation.pending.is_none()
             {
                 match invocation.input.frames.try_recv() {
-                    Ok(Ok(Some(frame))) => client_frame(frame, invocation, worker.as_mut())?,
+                    Ok(Ok(Some(frame))) => {
+                        progress = true;
+                        client_frame(frame, invocation, worker.as_mut())?;
+                    }
                     Ok(Ok(None)) | Err(TryRecvError::Disconnected)
                         if matches!(invocation.phase, Phase::ClientRelease) => {}
                     Ok(Ok(None)) | Err(TryRecvError::Disconnected) => {
@@ -1176,6 +1246,7 @@ fn coordinate(
         }
         if release {
             active = None;
+            progress = true;
         }
         if state.author.clean
             && state.author.status.is_some()
@@ -1185,6 +1256,7 @@ fn coordinate(
         {
             if !state.shutdown {
                 state.shutdown = true;
+                progress = true;
                 if let Some(worker) = worker.as_mut() {
                     let budget =
                         Duration::from_millis(binding.cleanup_timeout_ms).min(remaining(deadline)?);
@@ -1196,20 +1268,30 @@ fn coordinate(
                 return Ok(());
             }
         }
+        if !progress {
+            wait_for_activity(
+                wakeup,
+                custody,
+                (!state.shutdown).then(|| listener.as_fd()),
+                shutdown_deadline.unwrap_or(deadline).min(deadline),
+            )?;
+        }
     }
 }
 
-fn finish_release(active: &mut Option<Invocation>) -> Result<(), String> {
+fn finish_release(active: &mut Option<Invocation>) -> Result<bool, String> {
+    let mut progress = false;
     if let Some(invocation) = active.as_mut() {
-        invocation.output.flush(&mut invocation.pending)?;
+        progress |= invocation.output.flush(&mut invocation.pending)?;
         if matches!(invocation.phase, Phase::ClientRelease)
             && invocation.pending.is_none()
             && invocation.output.inflight == 0
         {
             *active = None;
+            progress = true;
         }
     }
-    Ok(())
+    Ok(progress)
 }
 
 fn receive_admission(
@@ -1500,6 +1582,99 @@ fn status_code(status: &PayloadStatus) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn queued_reader_frame_wakes_the_coordinator() {
+        let wakeup = Wakeup::new().unwrap();
+        let (socket, mut peer) = UnixStream::pair().unwrap();
+        let reader = Reader::new(socket, wakeup.notifier()).unwrap();
+        wire::write_frame(&mut peer, &Frame::Shutdown).unwrap();
+        assert!(matches!(
+            reader.frames.recv_timeout(Duration::from_secs(1)).unwrap(),
+            Ok(Some(Frame::Shutdown))
+        ));
+        assert!(wakeup.wait(Duration::from_secs(1), []).unwrap());
+    }
+
+    #[test]
+    fn completed_writer_wakes_the_coordinator() {
+        let wakeup = Wakeup::new().unwrap();
+        let (socket, mut peer) = UnixStream::pair().unwrap();
+        let mut writer = Writer::new(socket, wakeup.notifier()).unwrap();
+        writer.flush(&mut Some(Frame::Shutdown)).unwrap();
+        assert!(matches!(
+            wire::read_frame(&mut peer).unwrap(),
+            Some(Frame::Shutdown)
+        ));
+        assert!(wakeup.wait(Duration::from_secs(1), []).unwrap());
+        writer.flush(&mut None).unwrap();
+        assert_eq!(writer.inflight, 0);
+    }
+
+    #[test]
+    fn dropping_reader_releases_a_producer_with_unread_frames() {
+        struct TrackedSocket {
+            input: std::io::Cursor<Vec<u8>>,
+            read: SyncSender<()>,
+            dropped: SyncSender<()>,
+            duplicate: bool,
+        }
+        impl Read for TrackedSocket {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                let count = self.input.read(buffer)?;
+                if self.input.position() == self.input.get_ref().len() as u64 {
+                    let _ = self.read.try_send(());
+                }
+                Ok(count)
+            }
+        }
+        impl Write for TrackedSocket {
+            fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+                Ok(buffer.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        impl Socket for TrackedSocket {
+            fn duplicate(&self) -> std::io::Result<Self> {
+                Ok(Self {
+                    input: self.input.clone(),
+                    read: self.read.clone(),
+                    dropped: self.dropped.clone(),
+                    duplicate: true,
+                })
+            }
+            fn close(&self) {}
+        }
+        impl Drop for TrackedSocket {
+            fn drop(&mut self) {
+                if self.duplicate {
+                    let _ = self.dropped.try_send(());
+                }
+            }
+        }
+        let mut frames = Vec::new();
+        wire::write_frame(&mut frames, &Frame::Shutdown).unwrap();
+        wire::write_frame(&mut frames, &Frame::Shutdown).unwrap();
+        let (read, read_completed) = mpsc::sync_channel(1);
+        let (dropped, thread_exited) = mpsc::sync_channel(1);
+        let wakeup = Wakeup::new().unwrap();
+        let reader = Reader::new(
+            TrackedSocket {
+                input: std::io::Cursor::new(frames),
+                read,
+                dropped,
+                duplicate: false,
+            },
+            wakeup.notifier(),
+        )
+        .unwrap();
+        read_completed.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(thread_exited.try_recv().is_err());
+        drop(reader);
+        thread_exited.recv_timeout(Duration::from_secs(1)).unwrap();
+    }
 
     fn request() -> NativeRequest {
         NativeRequest {

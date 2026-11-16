@@ -1,4 +1,5 @@
 use super::custody::{Custody, CustodyEvent, GroupEvent, GroupKey, OwnerRequest, SpawnSpec};
+use super::wakeup::Notifier;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
@@ -18,6 +19,19 @@ pub enum CustodyAccess {
 }
 
 impl CustodyAccess {
+    pub(super) fn descriptor(&self) -> Option<BorrowedFd<'_>> {
+        match self {
+            Self::Standalone(custody) => Some(custody.descriptor()),
+            Self::Scoped(_) => None,
+        }
+    }
+
+    pub(super) fn set_notifier(&self, notifier: Notifier) {
+        if let Self::Scoped(custody) = self {
+            *custody.signals.notifier.lock().unwrap() = Some(notifier);
+        }
+    }
+
     pub fn spawn(
         &mut self,
         id: &str,
@@ -74,6 +88,15 @@ pub struct BrokerStatus {
 struct Signals {
     stop: AtomicBool,
     lost: AtomicBool,
+    notifier: Mutex<Option<Notifier>>,
+}
+
+impl Signals {
+    fn notify(&self) {
+        if let Some(notifier) = &*self.notifier.lock().unwrap() {
+            notifier.notify();
+        }
+    }
 }
 
 enum Request {
@@ -454,9 +477,13 @@ mod tests {
             status_path: PathBuf::new(),
             pending: VecDeque::new(),
         });
+        let wakeup = super::super::wakeup::Wakeup::new().unwrap();
+        custody.set_notifier(wakeup.notifier());
+        assert!(signals.notifier.lock().unwrap().is_some());
         custody.stop().unwrap();
         assert!(signals.stop.load(Ordering::Acquire));
         drop(custody);
+        assert!(signals.notifier.lock().unwrap().is_none());
         assert!(signals.lost.load(Ordering::Acquire));
         assert!(matches!(receiver.try_recv(), Ok(Request::Register { .. })));
         assert!(matches!(
@@ -536,6 +563,34 @@ mod tests {
             },
             receiver,
         )
+    }
+
+    #[test]
+    fn delivered_scope_event_wakes_its_coordinator() {
+        let (entry, receiver) = entry(ScopePhase::Running);
+        let wakeup = super::super::wakeup::Wakeup::new().unwrap();
+        *entry.signals.notifier.lock().unwrap() = Some(wakeup.notifier());
+        let status = Mutex::new(BrokerStatus::default());
+        let stop = AtomicBool::new(false);
+        let event = CustodyEvent::Stopped { clean: true };
+        deliver(&entry, event.clone(), &status, &stop);
+        assert!(wakeup.wait(Duration::ZERO, []).unwrap());
+        assert_eq!(receiver.try_recv().unwrap(), event);
+        assert!(!stop.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn closed_scope_queue_wakes_receiver_with_disconnection() {
+        let (entry, receiver) = entry(ScopePhase::Running);
+        let wakeup = super::super::wakeup::Wakeup::new().unwrap();
+        *entry.signals.notifier.lock().unwrap() = Some(wakeup.notifier());
+        assert!(matches!(receiver.try_recv(), Err(TryRecvError::Empty)));
+        close_scope_events(entry);
+        assert!(wakeup.wait(Duration::ZERO, []).unwrap());
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(TryRecvError::Disconnected)
+        ));
     }
 
     #[test]
@@ -828,6 +883,7 @@ impl ScopedCustody {
 
 impl Drop for ScopedCustody {
     fn drop(&mut self) {
+        self.signals.notifier.lock().unwrap().take();
         self.signals.lost.store(true, Ordering::Release);
     }
 }
@@ -871,7 +927,7 @@ fn deliver(entry: &Entry, event: CustodyEvent, status: &Mutex<BrokerStatus>, sto
         return;
     }
     match entry.events.try_send(event) {
-        Ok(()) => {}
+        Ok(()) => entry.signals.notify(),
         Err(TrySendError::Disconnected(_)) => entry.signals.lost.store(true, Ordering::Release),
         Err(TrySendError::Full(_)) => fail(status, stop),
     }
@@ -1007,6 +1063,15 @@ fn serve(
         state.uncertain = true;
     }
     state.finished = true;
+    drop(state);
+    for entry in scopes.into_values() {
+        close_scope_events(entry);
+    }
+}
+
+fn close_scope_events(entry: Entry) {
+    drop(entry.events);
+    entry.signals.notify();
 }
 
 fn dispatch_event(

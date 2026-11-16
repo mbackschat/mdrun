@@ -7,6 +7,7 @@ pub(crate) mod custody;
 pub(crate) mod host;
 mod platform;
 pub(crate) mod report;
+mod wakeup;
 mod wire;
 
 use std::path::PathBuf;
