@@ -66,6 +66,54 @@ fn run(args: &[&str]) -> Output {
 }
 
 #[test]
+fn absent_or_empty_executable_argument_uses_cli_diagnostics_without_session_forwarding() {
+    use std::ffi::CString;
+    use std::os::unix::process::CommandExt;
+
+    for absent in [true, false] {
+        for session_marker in [false, true] {
+            let binary = CString::new(env!("CARGO_BIN_EXE_mdrun")).unwrap();
+            let empty = CString::new("").unwrap();
+            let marker = CString::new("MDRUN_SESSION=/nonexistent-md-run-session").unwrap();
+            let mut command = Command::new(env!("CARGO_BIN_EXE_mdrun"));
+            command.env_clear();
+            unsafe {
+                command.pre_exec(move || {
+                    let argv = [
+                        if absent {
+                            std::ptr::null()
+                        } else {
+                            empty.as_ptr()
+                        },
+                        std::ptr::null(),
+                    ];
+                    let environment = [
+                        if session_marker {
+                            marker.as_ptr()
+                        } else {
+                            std::ptr::null()
+                        },
+                        std::ptr::null(),
+                    ];
+                    libc::execve(binary.as_ptr(), argv.as_ptr(), environment.as_ptr());
+                    Err(std::io::Error::last_os_error())
+                });
+            }
+            let output = command.output().unwrap();
+            let diagnostic = String::from_utf8(output.stderr).unwrap();
+            assert_eq!(
+                output.status.code(),
+                Some(2),
+                "absent={absent}, session_marker={session_marker}: {diagnostic}"
+            );
+            assert!(output.stdout.is_empty());
+            assert!(diagnostic.contains("Usage:"), "{diagnostic}");
+            assert!(!diagnostic.contains("panicked"), "{diagnostic}");
+        }
+    }
+}
+
+#[test]
 fn version_identifies_mdrun_without_a_target_runtime() {
     let output = run(&["--version"]);
     assert!(output.status.success());

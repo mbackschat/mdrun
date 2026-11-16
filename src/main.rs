@@ -15,14 +15,17 @@ use std::process::ExitCode;
 
 fn run() -> i32 {
     let arguments: Vec<_> = std::env::args_os().collect();
+    let executable_name = arguments
+        .first()
+        .and_then(|argument| Path::new(argument).file_name());
     // The session symlink forwards application arguments verbatim; clap owns mdrun's grammar.
-    if Path::new(&arguments[0]).file_name() != Some(OsStr::new("mdrun"))
+    if let Some(executable_name) = executable_name
+        && executable_name != OsStr::new("mdrun")
         && let Some(configuration) = std::env::var_os("MDRUN_SESSION")
     {
         let forwarded = (|| {
             let configuration = session::client::load(Path::new(&configuration))?;
-            if Path::new(&arguments[0]).file_name() != Some(OsStr::new(&configuration.binding_name))
-            {
+            if executable_name != OsStr::new(&configuration.binding_name) {
                 return Ok(None);
             }
             session::client::run(&configuration, arguments[1..].to_vec()).map(Some)

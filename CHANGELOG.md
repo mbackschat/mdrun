@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Report ordinary CLI usage errors when native launchers omit or empty the executable argument, including inside a managed session.
 - Add experimental `verify-many` with bounded document admission, shared resource custody, ordered output and aggregate reports; platform/lifecycle qualification remains open.
 - Preserve batch failure reports and bounded diagnostics, reject report aliases before execution, and publish session reports atomically.
 - Preserve JVM invocation interrupt semantics and strengthen Node framing, request identity and inert empty-output handling.
