@@ -125,7 +125,7 @@ def wheel(root, output):
     info = f"mdrun_sdk-{release}.dist-info/"
     metadata = ("Metadata-Version: 2.4\nName: mdrun-sdk\n"
                 f"Version: {release}\n"
-                "Summary: Cooperative Python worker SDK for experimental mdrun sessions\n"
+                "Summary: Cooperative Python worker SDK for mdrun sessions\n"
                 "Requires-Python: >=3.12\nLicense-Expression: MIT\nLicense-File: LICENSE\n"
                 "Project-URL: Source, https://github.com/mbackschat/mdrun\n"
                 "Description-Content-Type: text/markdown\n\n").encode() + archive_readme(root, "python", release)
