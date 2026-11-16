@@ -539,6 +539,11 @@ struct Group {
     stopping: Option<Instant>,
 }
 
+enum LaunchOutcome {
+    Granted,
+    TerminalRejected(io::Error),
+}
+
 fn emit(owner: &mut UnixStream, owner_alive: &mut bool, event: &CustodyEvent) {
     if *owner_alive && send_packet(owner, event, &[]).is_err() {
         *owner_alive = false;
@@ -659,7 +664,7 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                             control_closed: false,
                             stopping: None,
                         };
-                        let launch = (|| -> io::Result<()> {
+                        let launch = (|| -> io::Result<LaunchOutcome> {
                             let mut handoff: Vec<_> = descriptors.iter().map(AsFd::as_fd).collect();
                             handoff.extend(listeners.iter().map(AsFd::as_fd));
                             send_packet(
@@ -671,32 +676,53 @@ pub fn run_custodian(private_config_path: &Path) -> io::Result<i32> {
                                 },
                                 &handoff,
                             )?;
-                            if !matches!(
-                                receive_packet::<AnchorEvent>(&mut group.control)?,
-                                Some((AnchorEvent::Ready, _))
-                            ) {
+                            if !matches!(receive_packet::<AnchorEvent>(&mut group.control)?,
+                                Some((AnchorEvent::Ready, descriptors)) if descriptors.is_empty())
+                            {
                                 return Err(io::Error::other(
                                     "anchor did not establish group custody",
                                 ));
                             }
-                            group.terminal = TerminalRestore::capture(
-                                &descriptors,
-                                spec.caller_group,
-                                group.child.id() as i32,
-                            )?;
-                            if let Some(terminal) = &group.terminal {
-                                terminal.grant()?;
+                            let terminal = (|| -> io::Result<()> {
+                                group.terminal = TerminalRestore::capture(
+                                    &descriptors,
+                                    spec.caller_group,
+                                    group.child.id() as i32,
+                                )?;
+                                if let Some(terminal) = &group.terminal {
+                                    terminal.grant()?;
+                                }
+                                Ok(())
+                            })();
+                            if let Err(error) = terminal {
+                                return Ok(LaunchOutcome::TerminalRejected(error));
                             }
-                            send_packet(&mut group.control, &AnchorRequest::Grant, &[])
+                            send_packet(&mut group.control, &AnchorRequest::Grant, &[])?;
+                            Ok(LaunchOutcome::Granted)
                         })();
-                        if launch.is_err() {
-                            uncertain(
-                                &mut group,
-                                &mut owner,
-                                &mut owner_alive,
-                                "anchor launch or terminal custody failed",
-                            );
-                            admission_failed = true;
+                        match launch {
+                            Ok(LaunchOutcome::Granted) => {}
+                            Ok(LaunchOutcome::TerminalRejected(error)) => {
+                                admission_failed = true;
+                                emit(
+                                    &mut owner,
+                                    &mut owner_alive,
+                                    &CustodyEvent::Fault {
+                                        reason: format!(
+                                            "terminal custody rejected before payload launch: {error}"
+                                        ),
+                                    },
+                                );
+                            }
+                            Err(_) => {
+                                uncertain(
+                                    &mut group,
+                                    &mut owner,
+                                    &mut owner_alive,
+                                    "anchor launch control failed",
+                                );
+                                admission_failed = true;
+                            }
                         }
                         groups.push(group);
                     }
@@ -1028,11 +1054,14 @@ pub fn run_anchor() -> io::Result<i32> {
     let stderr = descriptors.next().unwrap();
     let _leases: Vec<_> = descriptors.collect();
     send_packet(&mut control, &AnchorEvent::Ready, &[])?;
-    if !matches!(receive_packet::<AnchorRequest>(&mut control), Ok(Some((AnchorRequest::Grant, descriptors))) if descriptors.is_empty())
-    {
-        retain_anchor(&mut control);
-    }
     let mut interruption = false;
+    match receive_packet::<AnchorRequest>(&mut control) {
+        Ok(Some((AnchorRequest::Grant, descriptors))) if descriptors.is_empty() => {}
+        Ok(Some((AnchorRequest::Stop, descriptors))) if descriptors.is_empty() => {
+            sweep_anchor(&mut control, false, &mut interruption);
+        }
+        _ => retain_anchor(&mut control),
+    }
     if report_interruption(&mut control, &mut interruption, false) {
         sweep_anchor(&mut control, false, &mut interruption);
     }
@@ -1136,6 +1165,130 @@ pub fn run_anchor() -> io::Result<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pregrant_anchor_fixture() {
+        if std::env::var_os("MDRUN_PREGRANT_ANCHOR_FIXTURE").is_some() {
+            run_anchor().unwrap();
+            panic!("anchor returned without its certified sweep");
+        }
+    }
+
+    #[test]
+    fn stop_before_payload_grant_certifies_an_empty_group_without_execution() {
+        exercise_pregrant(Some(AnchorRequest::Stop), true);
+    }
+
+    #[test]
+    fn invalid_or_closed_pregrant_control_retains_uncertainty() {
+        exercise_pregrant(Some(AnchorRequest::SweepAck), false);
+        exercise_pregrant(None, false);
+    }
+
+    fn exercise_pregrant(request: Option<AnchorRequest>, expect_sweep: bool) {
+        let marker =
+            std::env::temp_dir().join(format!("mdrun-pregrant-effect-{}", uuid::Uuid::new_v4()));
+        let (mut control, bootstrap) = UnixStream::pair().unwrap();
+        configure_control(&control).unwrap();
+        let lease = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = lease.local_addr().unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "session::custody::tests::pregrant_anchor_fixture",
+                "--nocapture",
+            ])
+            .env("MDRUN_PREGRANT_ANCHOR_FIXTURE", "1")
+            .stdin(Stdio::from(OwnedFd::from(bootstrap)))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let outcome = (|| -> io::Result<()> {
+            let null = File::open("/dev/null")?;
+            send_packet(
+                &mut control,
+                &AnchorRequest::Launch {
+                    spec: SpawnSpec {
+                        argv: vec!["/usr/bin/touch".into(), marker.clone().into_os_string()],
+                        cwd: std::env::temp_dir(),
+                        environment: Vec::new(),
+                        umask: 0o022,
+                        caller_group: unsafe { libc::getpgrp() },
+                    },
+                    resources: 1,
+                    cleanup_timeout_ms: 1000,
+                },
+                &[null.as_fd(), null.as_fd(), null.as_fd(), lease.as_fd()],
+            )?;
+            drop(lease);
+            if !matches!(receive_packet(&mut control)?, Some((AnchorEvent::Ready, _))) {
+                return Err(io::Error::other("anchor did not establish launch custody"));
+            }
+            if let Some(request) = request {
+                send_packet(&mut control, &request, &[])?;
+            } else {
+                control.shutdown(std::net::Shutdown::Write)?;
+            }
+            let event = receive_packet::<AnchorEvent>(&mut control)?;
+            if !expect_sweep {
+                if matches!(event, Some((AnchorEvent::Uncertain, descriptors)) if descriptors.is_empty())
+                {
+                    let until = Instant::now() + Duration::from_millis(100);
+                    loop {
+                        if child.try_wait()?.is_some() {
+                            return Err(io::Error::other("uncertain anchor exited"));
+                        }
+                        match TcpListener::bind(address) {
+                            Err(error) if error.kind() == io::ErrorKind::AddrInUse => {}
+                            _ => {
+                                return Err(io::Error::other("uncertain anchor released its lease"));
+                            }
+                        }
+                        if Instant::now() >= until {
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    return Ok(());
+                }
+                return Err(io::Error::other(
+                    "invalid pre-grant control released custody",
+                ));
+            }
+            if !matches!(event, Some((AnchorEvent::Sweep { forced: false }, _))) {
+                return Err(io::Error::other(format!(
+                    "pre-grant stop did not request an empty-group sweep: {}",
+                    serde_json::to_string(&event.map(|(event, _)| event)).unwrap()
+                )));
+            }
+            send_packet(&mut control, &AnchorRequest::SweepAck, &[])?;
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    if status.signal() == Some(libc::SIGKILL) {
+                        TcpListener::bind(address)?;
+                        return Ok(());
+                    }
+                    return Err(io::Error::other("anchor exited without its self-sweep"));
+                }
+                if Instant::now() >= deadline {
+                    return Err(io::Error::other("anchor did not complete its sweep"));
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        })();
+        if child.try_wait().unwrap().is_none() {
+            child.kill().unwrap();
+        }
+        child.wait().unwrap();
+        let executed = marker.exists();
+        if executed {
+            fs::remove_file(&marker).unwrap();
+        }
+        assert!(!executed, "aborted launch executed its payload");
+        outcome.unwrap();
+    }
 
     #[test]
     fn socket_descriptors_do_not_require_terminal_foreground_custody() {
