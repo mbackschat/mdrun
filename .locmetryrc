@@ -61,6 +61,14 @@ category = "example"
 reason = "Maintained SDK examples"
 
 [[rules]]
+id = "packaged-consumer-fixtures"
+match = ["packaging/fixtures/**"]
+kind = ["source"]
+purpose = "test"
+category = "test-support"
+reason = "Synthetic applications qualify SDK release consumption and are not distributed SDK implementations"
+
+[[rules]]
 id = "project-tooling"
 match = ["scripts/**", "packaging/**"]
 kind = ["source"]
