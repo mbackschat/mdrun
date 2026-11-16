@@ -69,6 +69,8 @@ Publication is authorized. Complete these gates and retain exact-revision eviden
 5. Review per-target build records against the executable size budget; retain archive/notice sizes separately.
 6. Check that the GitHub author email is `mbackschat@mail.de` before pushing. A version tag is the explicit publication trigger; manual dispatch never publishes.
 
+Exercise the rendered Homebrew formula before tagging: place each checksum-verified candidate archive at the path reported by `brew --cache --formula mbackschat/tap/mdrun`, then run the actual install, `brew test` and removal checks. This checks the formula itself, including its changed-input fixture, while release URLs are still unavailable. After publication, separately verify the public downloads and their identities against the qualified payloads.
+
 ## Build and package locally
 
 This workflow is for maintainers producing candidate packages. Consumers do not need Rust, Python, Docker or package-building tools to run the installed host. The helper scripts require Python 3.11+ for development only.

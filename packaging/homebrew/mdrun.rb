@@ -51,7 +51,7 @@ class Mdrun < Formula
       assert_match "Recorded by the installed executable.", recorded
       assert_match "\npackage smoke\n", recorded
       system bin/"mdrun", "verify", "demo.md"
-      (testpath/"input.txt").write "changed input\n"
+      File.write(testpath/"input.txt", "changed input\n")
       assert_match "changed input", shell_output("#{bin}/mdrun verify demo.md", 1)
       assert_equal recorded, (testpath/"demo.md").read
     end
