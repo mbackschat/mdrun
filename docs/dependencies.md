@@ -1,6 +1,6 @@
 # Rust dependency choices
 
-These libraries address demonstrated document and session needs; they were not inherited from LOCmetry. All are compiled into the native host. The complete resolved graph, including target-specific dependencies, is locked and subject to the [security quarantine](security.md) before compilation. Runtime SDK/application dependencies are qualified separately; the developing Node SDK uses only built-in modules.
+These libraries address demonstrated document and session needs; they were not inherited from LOCmetry. All are compiled into the native host. The complete resolved graph, including target-specific dependencies, is locked and subject to the [security quarantine](security.md) before compilation. Runtime SDK/application dependencies are qualified separately; the developing Node and Python SDKs use only their runtimes’ standard libraries.
 
 | Direct library | Adopted version and publication date | Purpose |
 | --- | --- | --- |

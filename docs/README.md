@@ -11,6 +11,7 @@ Current status: document CLI and read-only discovery qualified on macOS/Linux, 2
 | [Node SDK](../sdk/node/README.md) | Experimental cooperative worker API, examples and resource limits |
 | [JVM SDK](../sdk/jvm/README.md) | Experimental Java 21 worker API, preparation and application reset contract |
 | [JVM character output example](../sdk/jvm/examples/README.md) | Request-owned Appendable sinks, charset parity and explicit lifetime limits |
+| [Python SDK](../sdk/python/README.md) | Experimental cooperative Python application API, binary streams and cancellation limits |
 | [Deferred work](DEFERRED.md) | Unscheduled scope and reopening conditions |
 | [Distribution](distribution.md) | Release targets, artifacts, Homebrew and Linux package qualification |
 | [Dependency choices](dependencies.md) | Reasons for compiled libraries and qualification policy |

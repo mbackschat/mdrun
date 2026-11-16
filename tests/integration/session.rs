@@ -8,6 +8,9 @@ use std::time::{Duration, Instant};
 #[path = "session_context.rs"]
 mod context;
 
+#[path = "session_python.rs"]
+mod python;
+
 struct Fixture(PathBuf);
 
 impl Fixture {

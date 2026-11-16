@@ -4,6 +4,7 @@
 
 - Add experimental native managed sessions, private executable forwarding, independent cold routing, custody/reporting with mdrun package identity, and a cooperative Node SDK; runtime and consumer qualification remains in progress.
 - Add an experimental Java 21 SDK with callable application hooks, lazy binary streams, reset/release gating, sticky invocation invalidation, hash-locked preparation and an application character-output example; JVM and consumer qualification remains in progress.
+- Add an experimental dependency-free Python SDK with explicit application hooks, lazy binary streams, cooperative cancellation and sticky failure; native-host parity and protocol controls qualify the initial boundary.
 - Allow experimental bindings to declare `SHLVL`/`_` irrelevant to warm-eligible behavior, enabling qualified shell workflows while retaining strict defaults and original cold environments.
 - Clean up rejected terminal launches before payload execution without leaving unnecessary custody behind; ambiguous launch/control failures still retain exclusion.
 - Restore nested terminal foreground ownership in dependency order after interruption and publish complete custody status snapshots for concurrent readers.
