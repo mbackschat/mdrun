@@ -16,7 +16,28 @@ function objectFields(value, fields, reason = 'invalid_frame') {
 }
 
 function nonempty(value) {
-    return typeof value === 'string' && value.length > 0;
+    return typeof value === 'string' && value.length > 0 && value.isWellFormed();
+}
+
+function parseJson(text) {
+    const value = JSON.parse(text, (key, entry) => {
+        requireValue(key.isWellFormed() && (typeof entry !== 'string' || entry.isWellFormed()), 'invalid_json');
+        return entry;
+    });
+    // JSON.parse validates grammar but discards duplicate members before its reviver runs.
+    const scopes = [];
+    for (const token of text.matchAll(/"(?:[^"\\]|\\[\s\S])*"(\s*:)?|[{}[\]]/g)) {
+        if (token[0] === '{') scopes.push(new Set());
+        else if (token[0] === '[') scopes.push(null);
+        else if (token[0] === '}' || token[0] === ']') scopes.pop();
+        else if (token[1]) {
+            const key = JSON.parse(token[0].slice(0, token[0].lastIndexOf('"') + 1));
+            const fields = scopes.at(-1);
+            requireValue(key.isWellFormed() && !fields.has(key), 'invalid_json');
+            fields.add(key);
+        }
+    }
+    return value;
 }
 
 function encode(frame) {
@@ -57,7 +78,7 @@ class Channel {
         requireValue(size > 0 && size <= FRAME_LIMIT, 'frame_limit');
         let frame;
         try {
-            frame = JSON.parse(UTF8.decode(await this.readBytes(size)));
+            frame = parseJson(UTF8.decode(await this.readBytes(size)));
         } catch {
             throw new Error('invalid_json');
         }
@@ -117,6 +138,7 @@ export async function runWorker({ configPath, classify, invoke, reset }) {
     let data;
     let control;
     let current = null;
+    const requestIds = new Set();
     let terminated = false;
     let resolveTerminal;
     let rejectTerminal;
@@ -154,8 +176,9 @@ export async function runWorker({ configPath, classify, invoke, reset }) {
             eof: false, pendingRead: null, pendingOutput: null, sequence: 0,
         };
         const write = (stream, bytes) => {
-            if (context.phase !== 'running' || terminated) return fail('late_output');
             if (!(bytes instanceof Uint8Array)) return fail('invalid_output');
+            if (bytes.length === 0) return Promise.resolve();
+            if (context.phase !== 'running' || terminated) return fail('late_output');
             if (context.pendingOutput) return fail('concurrent_output');
             const operation = (async () => {
                 for (let offset = 0; offset < bytes.length; offset += CHUNK_LIMIT) {
@@ -211,7 +234,8 @@ export async function runWorker({ configPath, classify, invoke, reset }) {
         switch (frame.kind) {
             case 'classify': {
                 objectFields(frame, ['kind', 'request_id', 'argv']);
-                requireValue(current === null && nonempty(frame.request_id) && Array.isArray(frame.argv) && frame.argv.every(value => typeof value === 'string'), 'invalid_classification');
+                requireValue(current === null && nonempty(frame.request_id) && !requestIds.has(frame.request_id) && Array.isArray(frame.argv) && frame.argv.every(value => typeof value === 'string'), 'invalid_classification');
+                requestIds.add(frame.request_id);
                 const argv = Object.freeze([...frame.argv]);
                 current = makeInvocation(frame.request_id, argv);
                 current.phase = 'classifying';
@@ -261,7 +285,7 @@ export async function runWorker({ configPath, classify, invoke, reset }) {
 
     try {
         let config;
-        try { config = JSON.parse(await readFile(configPath, 'utf8')); } catch { throw new Error('invalid_config'); }
+        try { config = parseJson(UTF8.decode(await readFile(configPath))); } catch { throw new Error('invalid_config'); }
         objectFields(config, ['protocol', 'session_id', 'artifact_id', 'token', 'connect'], 'invalid_config');
         objectFields(config.connect, ['host', 'port'], 'invalid_config');
         requireValue(config.protocol === 1 && [config.session_id, config.artifact_id, config.token].every(nonempty)

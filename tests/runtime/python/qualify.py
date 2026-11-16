@@ -149,11 +149,20 @@ class PythonProtocol(unittest.TestCase):
 
     def test_refusal_clears_classification_without_invocation(self):
         with self.host() as host:
-            self.assertEqual(host.classify("refuse"), {"kind": "refused", "request_id": "one", "reason": "unsupported_command"})
+            marker = Path(host.directory.name) / "refused-invoked"
+            self.assertEqual(host.classify("refuse", "one", str(marker)), {"kind": "refused", "request_id": "one", "reason": "unsupported_command"})
             host.invoke("fail", "two")
             self.assertEqual(receive(host.data), {"kind": "complete", "request_id": "two", "exit_code": 17})
             host.release("two")
             self.assertEqual(host.shutdown(), 0)
+            self.assertFalse(marker.exists(), "refused classification invoked the application")
+
+    def test_active_request_rejects_stdin_without_application_credit(self):
+        for kind in ("stdin", "stdin_eof"):
+            with self.subTest(kind=kind), self.host() as host:
+                host.invoke("gated_no_input")
+                send(host.data, {"kind": kind, "request_id": "one", **({"base64": "YQ=="} if kind == "stdin" else {})})
+                self.assert_fault(host, "protocol_error")
 
     def test_binary_streams_exceed_frame_size_with_fresh_eof_and_bounded_credit(self):
         payload = bytes(range(256)) * 12289

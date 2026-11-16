@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -106,12 +107,21 @@ public final class Fixture implements Application {
                 });
                 yield 0;
             }
+            case "refuse" -> {
+                Files.writeString(Path.of(request.argv().get(1)), "invoked\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+                yield 0;
+            }
+            case "gated_no_input" -> {
+                new CountDownLatch(1).await();
+                yield 0;
+            }
             case "throw" -> throw new IllegalStateException("private application detail");
             case "blocked_input" -> {
                 request.stdin().read();
                 yield 0;
             }
-            case "blocked_output" -> {
+            case "blocked_output", "interrupted_blocked_output" -> {
+                if (request.argv().getFirst().equals("interrupted_blocked_output")) Thread.currentThread().interrupt();
                 byte[] bytes = new byte[65536];
                 for (;;) request.stdout().write(bytes);
             }
@@ -155,6 +165,7 @@ public final class Fixture implements Application {
 
     @Override
     public void reset(Invocation request) {
+        if (Thread.currentThread().isInterrupted()) throw new AssertionError("callback interrupt leaked into reset");
         if (!request.argv().isEmpty() && request.argv().getFirst().equals("resetfail")) {
             throw new IllegalStateException("resource remained live");
         }

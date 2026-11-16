@@ -38,6 +38,13 @@ public final class Example {
                         .getBytes(StandardCharsets.UTF_8));
                 yield 0;
             }
+            case "interrupted_output", "interrupted_status", "interrupted_large_output" -> {
+                Thread.currentThread().interrupt();
+                if (argv.getFirst().equals("interrupted_large_output")) stdout.write(new byte[3 * 1024 * 1024]);
+                else if (argv.getFirst().equals("interrupted_output")) stdout.write(new byte[] {'o', 'k'});
+                if (!Thread.currentThread().isInterrupted()) throw new AssertionError("output consumed interrupt");
+                yield 1;
+            }
             case "fail" -> 17;
             default -> 0;
         };

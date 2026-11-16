@@ -3,14 +3,36 @@ import { createReadStream } from 'node:fs';
 import { rename, writeFile } from 'node:fs/promises';
 
 let afterShutdown;
+let retained;
 
 await runWorker({
     configPath: process.argv[2],
     classify(argv) {
+        if (argv[0] === 'invalid_refusal') return '\ud800';
         return argv[0] === 'refuse' ? 'unsupported_command' : true;
     },
     async invoke(request) {
         switch (request.argv[0]) {
+            case 'refuse':
+                await writeFile(request.argv[1], 'invoked\n');
+                return 0;
+            case 'gated_no_input':
+                if (!request.signal.aborted) await new Promise(resolve => request.signal.addEventListener('abort', resolve, { once: true }));
+                return 0;
+            case 'zero_output':
+                retained = request;
+                await request.stdout.write(Buffer.alloc(0));
+                return 0;
+            case 'zero_previous':
+                await retained.stdout.write(Buffer.alloc(0));
+                await retained.stderr.write(new Uint8Array(0));
+                return 0;
+            case 'late_shutdown_zero':
+                afterShutdown = () => {
+                    request.stdout.write(Buffer.alloc(0)).catch(() => {});
+                    request.stderr.write(new Uint8Array(0)).catch(() => {});
+                };
+                return 0;
             case 'ignore':
                 await request.stdout.write(Buffer.from('ok'));
                 return 0;
@@ -94,6 +116,7 @@ await runWorker({
         }
     },
     async reset(request) {
+        if (request.argv[0] === 'zero_output') await request.stderr.write(new Uint8Array(0));
         if (request.argv[0] === 'resetfail') throw new Error('resource remained live');
     },
 }).then(() => {

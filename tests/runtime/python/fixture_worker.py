@@ -66,7 +66,12 @@ class Fixture(Application):
         assert threading.current_thread() is self.execution
         assert isinstance(request.argv, tuple)
         command = request.argv[0]
-        if command == "ignore":
+        if command == "refuse":
+            Path(request.argv[1]).write_bytes(b"invoked\n")
+        elif command == "gated_no_input":
+            while not request.cancelled:
+                time.sleep(.005)
+        elif command == "ignore":
             request.stdout.write(b"ok")
         elif command == "fail":
             return 17

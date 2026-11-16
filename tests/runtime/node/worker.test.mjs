@@ -107,8 +107,8 @@ async function host(t, fixture = new URL('./fixture-worker.mjs', import.meta.url
     assert.deepEqual(ready, { kind: 'ready', protocol: 1, session_id: identity.session_id, artifact_id: identity.artifact_id, capabilities: ['pull_stdin', 'sequenced_output', 'release_ack'] });
     return {
         data, control, worker, exited, directory,
-        async classify(command, requestId = 'one') {
-            data.send({ kind: 'classify', request_id: requestId, argv: [command] });
+        async classify(command, requestId = 'one', ...arguments_) {
+            data.send({ kind: 'classify', request_id: requestId, argv: [command, ...arguments_] });
             return await data.next();
         },
         async invoke(command, requestId = 'one') {
@@ -202,11 +202,13 @@ test('ordinary failure can be released and followed by success', async t => {
 
 test('refusal clears classification without invoking application', async t => {
     const h = await host(t);
-    assert.deepEqual(await h.classify('refuse'), { kind: 'refused', request_id: 'one', reason: 'unsupported_command' });
+    const marker = join(h.directory, 'refused-invoked');
+    assert.deepEqual(await h.classify('refuse', 'one', marker), { kind: 'refused', request_id: 'one', reason: 'unsupported_command' });
     await h.invoke('fail', 'two');
     assert.deepEqual(await h.data.next(), { kind: 'complete', request_id: 'two', exit_code: 17 });
     await h.release('two');
     await h.shutdown();
+    assert.equal(existsSync(marker), false, 'refused classification invoked the application');
 });
 
 for (const command of ['throw', 'resetfail']) {
@@ -250,6 +252,111 @@ test('caught late output after orderly shutdown preserves an existing failure st
     h.control.send({ kind: 'shutdown' });
     assert.deepEqual(await h.exited, { code: 17, signal: null });
 });
+
+test('zero-length output emits no frames during reset and through a retained request', async t => {
+    const h = await host(t);
+    for (const [request, command] of [['one', 'zero_output'], ['two', 'zero_previous']]) {
+        await h.invoke(command, request);
+        assert.deepEqual(await h.data.next(), { kind: 'complete', request_id: request, exit_code: 0 });
+        await h.release(request);
+    }
+    await h.shutdown();
+});
+
+test('zero-length output remains inert after orderly shutdown', async t => {
+    const h = await host(t);
+    await h.invoke('late_shutdown_zero');
+    assert.deepEqual(await h.data.next(), { kind: 'complete', request_id: 'one', exit_code: 0 });
+    await h.release();
+    await h.shutdown();
+});
+
+for (const kind of ['stdin', 'stdin_eof']) {
+    test(`active request rejects ${kind} without application credit`, async t => {
+        const h = await host(t);
+        await h.invoke('gated_no_input');
+        h.data.send({ kind, request_id: 'one', ...(kind === 'stdin' ? { base64: 'YQ==' } : {}) });
+        assert.deepEqual(await h.data.next(), { kind: 'fault', request_id: 'one', reason: 'protocol_error' });
+        assert.deepEqual(await h.exited, { code: 70, signal: null });
+    });
+}
+
+test('shutdown during active invocation fails and aborts blocked input', async t => {
+    const h = await host(t);
+    await h.invoke('blocked_input');
+    assert.equal((await h.data.next()).kind, 'stdin_read');
+    h.control.send({ kind: 'shutdown' });
+    assert.equal((await h.data.next()).kind, 'fault');
+    assert.deepEqual(await h.exited, { code: 70, signal: null });
+});
+
+for (const command of ['fail', 'refuse']) {
+    test(`request identity cannot be reused after ${command}`, async t => {
+        const h = await host(t);
+        if (command === 'refuse') assert.equal((await h.classify('refuse')).kind, 'refused');
+        else {
+            await h.invoke('fail');
+            assert.equal((await h.data.next()).kind, 'complete');
+            await h.release();
+        }
+        h.data.send({ kind: 'classify', request_id: 'one', argv: ['ignore'] });
+        assert.equal((await h.data.next()).kind, 'fault');
+        assert.deepEqual(await h.exited, { code: 70, signal: null });
+    });
+}
+
+test('invalid Unicode refusal reasons cannot produce a malformed outgoing frame', async t => {
+    const h = await host(t);
+    assert.equal((await h.classify('invalid_refusal')).kind, 'fault');
+    assert.deepEqual(await h.exited, { code: 70, signal: null });
+});
+
+test('valid JSON preserves escaped keys, structural characters and Unicode pairs', async t => {
+    const h = await host(t);
+    const requestId = 'request-😀';
+    const body = '{"k\\u0069nd":"classify","request_id":"request-\\ud83d\\ude00","argv":["\\ud83d\\ude00\\\\\\\"{}[]:"]}';
+    const prefix = Buffer.alloc(4);
+    prefix.writeUInt32BE(Buffer.byteLength(body));
+    h.data.socket.write(Buffer.concat([prefix, Buffer.from(body)]));
+    assert.deepEqual(await h.data.next(), { kind: 'eligible', request_id: requestId });
+    h.data.send({ kind: 'invoke', request_id: requestId });
+    assert.deepEqual(await h.data.next(), { kind: 'accepted', request_id: requestId });
+    assert.deepEqual(await h.data.next(), { kind: 'complete', request_id: requestId, exit_code: 0 });
+    await h.release(requestId);
+    await h.shutdown();
+});
+
+test('startup rejects duplicate nested configuration keys and invalid Unicode before connecting', async t => {
+    const directory = await mkdtemp(join(tmpdir(), 'mdrun-node-config-'));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const configPath = join(directory, 'config.json');
+    const config = '{"protocol":1,"session_id":"test","artifact_id":"fixture","token":"test","connect":{"host":"127.0.0.1","port":1}}';
+    const { runWorker } = await import('../../../sdk/node/index.mjs');
+    for (const body of [
+        config.replace('"port":1', '"port":1,"\\u0070ort":1'),
+        config.replace('"token":"test"', '"token":"\\ud800"'),
+        Buffer.from(config.replace('"token":"test"', '"token":"INVALID"')).map(byte => byte === 73 ? 255 : byte),
+    ]) {
+        await writeFile(configPath, body);
+        await assert.rejects(runWorker({ configPath, classify: () => true, invoke: () => 0, reset: () => {} }), { message: 'invalid_config' });
+    }
+});
+
+for (const body of [
+    '{"kind":"classify","kind":"classify","request_id":"one","argv":[]}',
+    '{"kind":"classify","request_id":"one","argv":[],"\\u0061rgv":[]}',
+    '{"kind":"classify","request_id":"one","argv":["\\ud800"]}',
+    '{"kind":"classify","request_id":"one","argv":["\\udfff"]}',
+]) {
+    test(`rejects ambiguous JSON ${body}`, async t => {
+        const h = await host(t);
+        const prefix = Buffer.alloc(4);
+        prefix.writeUInt32BE(Buffer.byteLength(body));
+        h.data.socket.write(Buffer.concat([prefix, Buffer.from(body)]));
+        assert.equal((await h.data.next()).kind, 'fault');
+        assert.deepEqual(await h.exited, { code: 70, signal: null });
+    });
+}
 
 for (const command of ['blocked_input', 'blocked_output']) {
     test(`control loss interrupts ${command}`, async t => {

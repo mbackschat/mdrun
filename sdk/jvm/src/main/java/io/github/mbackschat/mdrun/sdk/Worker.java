@@ -395,6 +395,9 @@ public final class Worker {
             } catch (Throwable ignored) {
                 stop("invocation_failed");
                 return;
+            } finally {
+                // Callback interrupt status belongs to this invocation, not reset or the next request.
+                Thread.interrupted();
             }
             try {
                 synchronized (lock) {
@@ -421,6 +424,8 @@ public final class Worker {
             } catch (Throwable ignored) {
                 stop("reset_failed");
                 return;
+            } finally {
+                Thread.interrupted();
             }
             try {
                 synchronized (lock) {
@@ -795,9 +800,12 @@ public final class Worker {
 
         void send(Map<String, Object> message) throws Exception {
             ByteBuffer bytes = encode(message);
-            writeLock.lockInterruptibly();
+            boolean interrupted = Thread.interrupted();
+            writeLock.lock();
             try {
                 while (bytes.hasRemaining()) {
+                    // Selector.select returns immediately while interrupted; retain the flag for the caller.
+                    interrupted |= Thread.interrupted();
                     if (closed) {
                         throw new LocalClosure();
                     }
@@ -812,7 +820,11 @@ public final class Worker {
                 }
                 throw new ConnectionLost();
             } finally {
+                interrupted |= Thread.interrupted();
                 writeLock.unlock();
+                if (interrupted) {
+                    Thread.currentThread().interrupt();
+                }
             }
         }
 

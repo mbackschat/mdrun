@@ -9,6 +9,7 @@ import socket
 import struct
 import subprocess
 import tempfile
+import time
 import unittest
 
 from prepare import prepare as prepare_fixture
@@ -108,6 +109,7 @@ class JvmProtocol(unittest.TestCase):
                                        Path(os.environ["MDRUN_JACKSON_CORE"]), Path(cls.output.name))
         argv = manifest["binding"]["worker_argv"]
         cls.java, cls.classpath = argv[0], argv[2]
+        cls.cold = manifest["binding"]["cold_argv"]
 
     def host(self):
         return Host(self.java, self.classpath)
@@ -125,11 +127,37 @@ class JvmProtocol(unittest.TestCase):
 
     def test_refusal_has_no_invocation_and_clears_classification(self):
         with self.host() as host:
-            self.assertEqual(host.classify("refuse"), {"kind": "refused", "request_id": "one", "reason": "unsupported_command"})
+            marker = Path(host.directory.name) / "refused-invoked"
+            self.assertEqual(host.classify("refuse", "one", str(marker)), {"kind": "refused", "request_id": "one", "reason": "unsupported_command"})
             host.invoke("fail", "two")
             self.assertEqual(receive(host.data), {"kind": "complete", "request_id": "two", "exit_code": 17})
             host.release("two")
             self.assertEqual(host.shutdown(), 0)
+            self.assertFalse(marker.exists(), "refused classification invoked the application")
+
+    def test_pending_application_interrupt_preserves_output_status_and_reuse(self):
+        cases = [("interrupted_output", b"ok"), ("interrupted_status", b""),
+                 ("interrupted_large_output", bytes(3 * 1024 * 1024))]
+        for command, expected in cases:
+            with self.subTest(command=command), self.host() as host:
+                cold = subprocess.run([*self.cold, command], capture_output=True, timeout=3)
+                self.assertEqual((cold.stdout, cold.stderr, cold.returncode), (expected, b"", 1))
+                host.invoke(command)
+                if command == "interrupted_large_output":
+                    time.sleep(.05)
+                actual, sequence = bytearray(), 0
+                while (frame := receive(host.data))["kind"] == "output":
+                    self.assertEqual((frame["request_id"], frame["sequence"], frame["stream"]),
+                                     ("one", sequence, "stdout"))
+                    sequence += 1
+                    actual.extend(base64.b64decode(frame["base64"], validate=True))
+                self.assertEqual(actual, expected)
+                self.assertEqual(frame, {"kind": "complete", "request_id": "one", "exit_code": 1})
+                host.release()
+                host.invoke("fail", "two")
+                self.assertEqual(receive(host.data), {"kind": "complete", "request_id": "two", "exit_code": 17})
+                host.release("two")
+                self.assertEqual(host.shutdown(), 0)
 
     def assert_invalidation_fault(self, host, request):
         self.assertEqual(receive(host.data), {"kind": "fault", "request_id": request,
@@ -233,7 +261,7 @@ class JvmProtocol(unittest.TestCase):
                 self.assertEqual(host.process.wait(timeout=3), 70)
 
     def test_control_loss_interrupts_blocked_input_and_output(self):
-        for command in ("blocked_input", "blocked_output"):
+        for command in ("blocked_input", "blocked_output", "interrupted_blocked_output"):
             with self.subTest(command=command), self.host() as host:
                 host.invoke(command)
                 if command == "blocked_input":
@@ -294,6 +322,14 @@ class JvmProtocol(unittest.TestCase):
             send(host.data, {"kind": "stdin_eof", "request_id": "one"})
             self.assertEqual(receive(host.data)["kind"], "fault")
             self.assertEqual(host.process.wait(timeout=3), 70)
+
+    def test_active_request_rejects_stdin_without_application_credit(self):
+        for kind in ("stdin", "stdin_eof"):
+            with self.subTest(kind=kind), self.host() as host:
+                host.invoke("gated_no_input")
+                send(host.data, {"kind": kind, "request_id": "one", **({"base64": "YQ=="} if kind == "stdin" else {})})
+                self.assertEqual(receive(host.data), {"kind": "fault", "request_id": "one", "reason": "protocol_error"})
+                self.assertEqual(host.process.wait(timeout=3), 70)
 
     def test_release_and_unique_identity_gate_the_next_request(self):
         for action in ("invoke_without_classify", "early_release", "withheld_release", "reused_identity"):
