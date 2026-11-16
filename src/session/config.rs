@@ -78,10 +78,9 @@ fn cleanup_timeout() -> u64 {
 ///
 /// The session host waits exactly this long, and batch sizes each wave's lifetime from the same value, so the two must not diverge.
 pub(super) fn cleanup_grace(cleanup_timeout_ms: u64) -> Option<Duration> {
-    cleanup_timeout_ms
+    Duration::from_millis(cleanup_timeout_ms)
         .checked_mul(2)
-        .and_then(|value| value.checked_add(500))
-        .map(Duration::from_millis)
+        .and_then(|value| value.checked_add(Duration::from_millis(500)))
 }
 
 impl Binding {
@@ -390,6 +389,22 @@ mod tests {
                 json[field] = json!(duration);
                 assert!(validate(json).is_err(), "accepted {field}={duration}");
             }
+        }
+    }
+
+    #[test]
+    fn cleanup_grace_covers_the_complete_binding_timeout_domain() {
+        let largest = i64::MAX as u64;
+        for timeout in (largest - 250)..=largest {
+            let mut json = binding_json();
+            json["cleanup_timeout_ms"] = json!(timeout);
+            let binding = validate(json).unwrap();
+            assert_eq!(
+                cleanup_grace(binding.cleanup_timeout_ms)
+                    .unwrap_or_else(|| panic!("rejected valid cleanup timeout {timeout}"))
+                    .as_millis(),
+                u128::from(timeout) * 2 + 500
+            );
         }
     }
 

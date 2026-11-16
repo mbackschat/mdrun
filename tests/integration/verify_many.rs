@@ -6,7 +6,9 @@ use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStrExt;
 #[cfg(target_os = "linux")]
 use std::os::unix::ffi::OsStringExt;
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
@@ -135,6 +137,130 @@ fn short_budget(fixture: &Fixture) {
     binding["session_timeout_ms"] = json!(500);
     binding["cleanup_timeout_ms"] = json!(100);
     fixture.write("binding.json", serde_json::to_vec(&binding).unwrap());
+}
+
+fn owner_masking_umask(command: &mut Command) {
+    unsafe {
+        command.pre_exec(|| {
+            libc::umask(0o777);
+            Ok(())
+        });
+    }
+}
+
+#[test]
+fn batch_private_files_remain_owner_readable_under_owner_masking_umask() {
+    let fixture = Fixture::new();
+    fixture.document("a.md", "a", "a");
+    let temporary = fixture.0.join("temporary");
+    fs::create_dir(&temporary).unwrap();
+    let mut command = fixture.command("1", &["a.md"]);
+    owner_masking_umask(&mut command);
+    let mut batch = OwnedBatch(
+        command
+            .env("TMPDIR", &temporary)
+            .stdin(Stdio::null())
+            .stdout(fs::File::create(fixture.0.join("stdout")).unwrap())
+            .stderr(fs::File::create(fixture.0.join("stderr")).unwrap())
+            .spawn()
+            .unwrap(),
+    );
+    fixture.wait_file("a.started");
+    let workspace = fs::read_dir(&temporary)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .unwrap()
+                .as_bytes()
+                .starts_with(b"mdrun-batch-")
+        })
+        .unwrap();
+    for name in ["0.stdout", "0.stderr"] {
+        let path = workspace.join(name);
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600,
+            "{}",
+            path.display()
+        );
+    }
+    let reports: Vec<_> = fs::read_dir(&fixture.0)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .unwrap()
+                .as_bytes()
+                .starts_with(b".mdrun-report-")
+        })
+        .collect();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        fs::metadata(&reports[0]).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    fixture.write("a.go", b"");
+    assert!(batch.finish().success());
+    let report = fixture.report();
+    assert_eq!(report["outcome"], "success");
+    assert_eq!(report["cleanup"]["outcome"], "clean");
+    assert_eq!(
+        fs::metadata(fixture.0.join("batch.json"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+    assert!(!reports[0].exists());
+    assert_eq!(fs::read_dir(&temporary).unwrap().count(), 0);
+}
+
+#[test]
+fn batch_publication_remains_readable_under_owner_masking_umask() {
+    let fixture = Fixture::new();
+    fixture.document("fail.md", "fail", "expected");
+    fixture.write("fail.go", b"");
+    let mut command = fixture.command("1", &["fail.md"]);
+    owner_masking_umask(&mut command);
+    let output = command.output().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("fail.md"), "{stdout}");
+    assert!(stdout.contains("expected"), "{stdout}");
+    assert!(stdout.contains("unexpected"), "{stdout}");
+    assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+    let report = fixture.report();
+    assert_eq!(report["infrastructure_failure"], Value::Null);
+    assert_eq!(report["cleanup"]["outcome"], "clean");
+    assert_eq!(report["documents"][0]["status"], 1);
+}
+
+#[test]
+fn batch_diagnostics_remain_readable_under_owner_masking_umask() {
+    let fixture = Fixture::new();
+    let listener = crate::ports::listener();
+    let address = listener.local_addr().unwrap();
+    let mut binding: Value =
+        serde_json::from_slice(&fs::read(fixture.0.join("binding.json")).unwrap()).unwrap();
+    binding["resources"] =
+        json!([{"kind":"tcp_listener","host":"127.0.0.1","port":address.port()}]);
+    fixture.write("binding.json", serde_json::to_vec(&binding).unwrap());
+    fixture.document("a.md", "a", "a");
+    let mut command = fixture.command("1", &["a.md"]);
+    owner_masking_umask(&mut command);
+    let output = command.output().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("cannot establish batch custody"),
+        "{stderr}"
+    );
+    let report = fixture.report();
+    assert_eq!(report["outcome"], "failure");
+    assert_eq!(report["cleanup"]["outcome"], "not_started");
+    assert!(!fixture.0.join("a.started").exists());
 }
 
 #[test]

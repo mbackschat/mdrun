@@ -1,6 +1,6 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 pub(crate) struct ReportFile {
@@ -24,11 +24,16 @@ impl ReportFile {
             .mode(0o600)
             .open(&temporary)
             .map_err(|_| "cannot prepare execution report")?;
-        Ok(Self {
+        let prepared = Self {
             temporary,
             destination,
             file,
-        })
+        };
+        prepared
+            .file
+            .set_permissions(fs::Permissions::from_mode(0o600))
+            .map_err(|_| "cannot protect execution report")?;
+        Ok(prepared)
     }
 
     pub(crate) fn invalidate_previous(&self) -> Result<(), String> {

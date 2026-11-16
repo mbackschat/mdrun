@@ -24,6 +24,16 @@ use std::time::{Duration, Instant};
 
 const TICK: Duration = Duration::from_millis(5);
 
+fn private_file(path: &Path) -> io::Result<File> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)?;
+    file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    Ok(file)
+}
+
 #[derive(Debug, clap::Args)]
 pub struct Options {
     /// Prepared application binding shared by the batch.
@@ -224,11 +234,7 @@ fn publish_diagnostics(
 ) {
     let prepared = (|| -> io::Result<PathBuf> {
         let path = workspace.join("diagnostics.json");
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&path)?;
+        let mut file = private_file(&path)?;
         file.write_all(&serde_json::to_vec(&Publication {
             label: "mdrun".to_owned(),
             stdout: None,
@@ -288,12 +294,7 @@ impl Publisher {
             return Ok(false);
         };
         let path = workspace.join(format!("{index}.publication.json"));
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&path)
-            .map_err(|_| "cannot prepare batch publication")?;
+        let mut file = private_file(&path).map_err(|_| "cannot prepare batch publication")?;
         serde_json::to_vec(&publication)
             .map_err(io::Error::from)
             .and_then(|encoded| file.write_all(&encoded))
@@ -588,10 +589,10 @@ pub fn run(options: &Options, files: &[PathBuf], workdir: Option<&Path>) -> Resu
                         File::open("/dev/null")
                             .map_err(|_| "cannot open batch null input")?
                             .into(),
-                        File::create(&documents[index].stdout)
+                        private_file(&documents[index].stdout)
                             .map_err(|_| "cannot create document output spool")?
                             .into(),
-                        File::create(&documents[index].stderr)
+                        private_file(&documents[index].stderr)
                             .map_err(|_| "cannot create document diagnostics spool")?
                             .into(),
                     ]);
@@ -739,7 +740,6 @@ mod tests {
             batch_budget(5, 2, Duration::from_secs(10), Duration::from_secs(3)).unwrap(),
             Duration::from_secs(42)
         );
-        assert!(cleanup_grace(u64::MAX).is_none());
         assert!(batch_budget(2, 1, Duration::MAX, Duration::from_secs(1)).is_err());
     }
 
