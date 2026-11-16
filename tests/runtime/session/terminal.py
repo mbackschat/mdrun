@@ -111,6 +111,58 @@ def process_rows(deadline=None):
             for pid, parent, group, state in (line.split() for line in output.splitlines())]
 
 
+def observe_process(reference):
+    if not reference.get("identity"):
+        return {"state": "unknown", "reason": "missing_birth_identity"}
+    try:
+        native = process_info(reference["pid"])
+        row = next((row for row in process_rows() if row["pid"] == reference["pid"]), None)
+    except (OSError, ValueError, IndexError, KeyError, subprocess.SubprocessError) as error:
+        return {"state": "unknown", "reason": "observation_failed", "error": repr(error)}
+    observation = {"native": native, "row": row}
+    if native is None:
+        state = "dead" if row is None or row["state"] == "Z" else "unknown"
+    elif native["identity"] != reference["identity"]:
+        state = "dead"
+    elif native["state"] == "Z" or row is not None and row["state"] == "Z":
+        state = "dead"
+    else:
+        state = "live" if row is not None else "unknown"
+    return {"state": state, **observation}
+
+
+def observe_background(directory, port):
+    reference = json.loads((directory / "background.json").read_text())
+    heartbeat = directory / "heartbeat.json"
+    before = observe_process(reference)
+    first = json.loads(heartbeat.read_text())["sequence"] if heartbeat.exists() else None
+    listener_available = available(port)
+    last = first
+    limit = time.monotonic() + 0.3
+    while before["state"] == "live" and first is not None and last == first and time.monotonic() < limit:
+        time.sleep(0.005)
+        last = json.loads(heartbeat.read_text())["sequence"]
+    return {"before": before, "after": observe_process(reference), "heartbeat_before": first,
+            "heartbeat_after": last, "heartbeat_advanced": first is not None and last is not None and last > first,
+            "listener_available": listener_available}
+
+
+def cleanup_background(directory, result):
+    path = directory / "background.json"
+    if not path.exists():
+        return
+    reference = json.loads(path.read_text())
+    observation = {"cooperative_close": (directory / "background.closed.json").exists()}
+    result["background_cleanup"] = observation
+
+    def dead():
+        observation["cooperative_close"] = (directory / "background.closed.json").exists()
+        observation["observation"] = observe_process(reference)
+        return observation["observation"]["state"] == "dead"
+
+    wait_for(dead, 1, "background helper death remains live or unknown")
+
+
 def wait_for(condition, seconds, description):
     deadline = time.monotonic() + seconds
     while not condition():
@@ -233,9 +285,11 @@ def author(args):
 
 
 def background(args):
+    birth = process_info(os.getpid())
+    assert birth is not None and birth["state"] != "Z"
     publish(args.directory, "background.json", {
         "pid": os.getpid(), "group": os.getpgrp(), "parent_group": os.getpgid(os.getppid()),
-        "session": os.getsid(0),
+        "session": os.getsid(0), "identity": birth["identity"],
     })
     sequence = 0
     try:
@@ -422,52 +476,54 @@ def driver(args):
             result["status"] = json.loads((args.directory / "job.json").read_text())["status"]
         result["returned_foreground"] = os.tcgetpgrp(0)
         result["returned_descriptors"] = descriptors()
+    except BaseException as error:
+        result["primary_error"] = repr(error)
+        raise
     finally:
-        foreground(initial["group"])
-        result["driver_restored"] = os.tcgetpgrp(0) == initial["group"]
-        if args.case == "background_group" and (args.directory / "heartbeat.json").exists():
-            before = json.loads((args.directory / "heartbeat.json").read_text())["sequence"]
-            limit = time.monotonic() + 0.3
-            after = before
-            while after <= before and time.monotonic() < limit:
-                after = json.loads((args.directory / "heartbeat.json").read_text())["sequence"]
-                time.sleep(0.005)
-            result["background_advanced_after_session"] = after > before
-            result["listener_available_before_fixture_cleanup"] = available(port)
-        (args.directory / "finished").write_bytes(b"")
-        if child.poll() is None:
-            groups = known_groups(args.directory)
-            report = args.directory / "report.json"
-            retained = report.exists() and json.loads(report.read_text())["cleanup"]["outcome"] != "clean"
-            if not retained:
-                wait_for(lambda: not live_members(groups, exclude={child.pid}), 1, "live payload prevented fixture exit")
-            os.write(write, b"S" if retained else b"R")
-            if retained:
-                def wrapper_stopped():
-                    pid, status = os.waitpid(child.pid, os.WUNTRACED | os.WNOHANG)
-                    if pid and (os.WIFEXITED(status) or os.WIFSIGNALED(status)):
-                        child.returncode = os.waitstatus_to_exitcode(status)
-                        raise AssertionError("fixture wrapper exited before freezing its group")
-                    return bool(pid and os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGSTOP)
-                wait_for(wrapper_stopped, 1, "wrapper did not freeze its own group")
-                child.send_signal(signal.SIGCONT)
-                def teardown_finished():
-                    failure = args.directory / "teardown.failure.json"
-                    if failure.exists() and "teardown_failure" not in result:
-                        result["teardown_failure"] = json.loads(failure.read_text())
-                        publish(args.directory, "result.json", result)
-                        os.write(write, b"F")
-                    return child.poll() is not None
-                wait_for(teardown_finished, 4, "retained fixture teardown did not finish")
-            teardown_status = child.wait(timeout=4)
-            assert teardown_status == (-signal.SIGKILL if retained else result["status"]), "fixture wrapper exited without the required cleanup acknowledgement"
-            result["fixture_teardown"] = "owned_group_sweep" if retained else "ordinary_exit"
-            if retained:
-                wait_for(lambda: not live_members({child.pid}), 0.5, "owned fixture group remained live after self-sweep")
-                private = Path(json.loads(report.read_text())["cleanup"]["status_path"]).parent
-                shutil.rmtree(private)
-        os.close(write)
-        publish(args.directory, "result.json", result)
+        try:
+            foreground(initial["group"])
+            result["driver_restored"] = os.tcgetpgrp(0) == initial["group"]
+            if args.case == "background_group" and (args.directory / "background.json").exists():
+                result["background_observation"] = observe_background(args.directory, port)
+            publish(args.directory, "result.json", result)
+            (args.directory / "finished").write_bytes(b"")
+            if child.poll() is None:
+                groups = known_groups(args.directory)
+                report = args.directory / "report.json"
+                retained = report.exists() and json.loads(report.read_text())["cleanup"]["outcome"] != "clean"
+                if not retained:
+                    wait_for(lambda: not live_members(groups, exclude={child.pid}), 1, "live payload prevented fixture exit")
+                os.write(write, b"S" if retained else b"R")
+                if retained:
+                    def wrapper_stopped():
+                        pid, status = os.waitpid(child.pid, os.WUNTRACED | os.WNOHANG)
+                        if pid and (os.WIFEXITED(status) or os.WIFSIGNALED(status)):
+                            child.returncode = os.waitstatus_to_exitcode(status)
+                            raise AssertionError("fixture wrapper exited before freezing its group")
+                        return bool(pid and os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGSTOP)
+                    wait_for(wrapper_stopped, 1, "wrapper did not freeze its own group")
+                    child.send_signal(signal.SIGCONT)
+                    def teardown_finished():
+                        failure = args.directory / "teardown.failure.json"
+                        if failure.exists() and "teardown_failure" not in result:
+                            result["teardown_failure"] = json.loads(failure.read_text())
+                            publish(args.directory, "result.json", result)
+                            os.write(write, b"F")
+                        return child.poll() is not None
+                    wait_for(teardown_finished, 4, "retained fixture teardown did not finish")
+                teardown_status = child.wait(timeout=4)
+                assert teardown_status == (-signal.SIGKILL if retained else result["status"]), "fixture wrapper exited without the required cleanup acknowledgement"
+                result["fixture_teardown"] = "owned_group_sweep" if retained else "ordinary_exit"
+                if retained:
+                    wait_for(lambda: not live_members({child.pid}), 0.5, "owned fixture group remained live after self-sweep")
+                    private = Path(json.loads(report.read_text())["cleanup"]["status_path"]).parent
+                    shutil.rmtree(private)
+            os.close(write)
+        except BaseException as error:
+            result["cleanup_error"] = repr(error)
+            raise
+        finally:
+            publish(args.directory, "result.json", result)
     return 0
 
 
@@ -486,24 +542,30 @@ def capture(args, case):
     with tempfile.TemporaryDirectory(prefix="mdrun-terminal-") as temporary:
         case_args = argparse.Namespace(**vars(args))
         case_args.case, case_args.directory = case, Path(temporary)
-        master, slave = pty.openpty()
-        state = termios.tcgetattr(slave)
-        state[1] &= ~termios.OPOST
-        state[3] &= ~termios.ECHO
-        termios.tcsetattr(slave, termios.TCSANOW, state)
-
-        def controlling_terminal():
-            os.setsid()
-            fcntl.ioctl(0, termios.TIOCSCTTY, 0)
-
-        child = subprocess.Popen(invocation(case_args, "driver"), stdin=slave, stdout=slave, stderr=slave,
-                                 cwd=temporary, preexec_fn=controlling_terminal)
-        os.close(slave)
+        master = slave = child = None
         output = bytearray()
         sent = False
         excluded_during_payload = None
         deadline = time.monotonic() + 12
+        primary_error = None
+        cleanup_failures = []
+        result = {"scratch_directory": temporary, "candidate": str(args.mdrun),
+                  "primary_error": None, "cleanup_errors": []}
         try:
+            master, slave = pty.openpty()
+            state = termios.tcgetattr(slave)
+            state[1] &= ~termios.OPOST
+            state[3] &= ~termios.ECHO
+            termios.tcsetattr(slave, termios.TCSANOW, state)
+
+            def controlling_terminal():
+                os.setsid()
+                fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+
+            child = subprocess.Popen(invocation(case_args, "driver"), stdin=slave, stdout=slave, stderr=slave,
+                                     cwd=temporary, preexec_fn=controlling_terminal)
+            os.close(slave)
+            slave = None
             while True:
                 if not sent and case != "no_grant" and (case_args.directory / "payload.json").exists():
                     if case not in ("independent", "independent_interrupt", "no_restore"):
@@ -527,27 +589,50 @@ def capture(args, case):
                 if time.monotonic() >= deadline:
                     raise TimeoutError("external controlling-terminal watchdog expired")
             child.wait(timeout=1)
-            result = {"driver_status": child.returncode, "pty_hex": output.hex(),
-                      "excluded_during_payload": excluded_during_payload}
             binding = json.loads((case_args.directory / "binding.json").read_text())
             result["listener_available_after_session"] = available(binding["resources"][0]["port"])
-            result["files"] = {path.name: json.loads(path.read_text()) for path in case_args.directory.glob("*.json")}
-            return result
+        except BaseException as error:
+            primary_error = error
+            result["primary_error"] = repr(error)
         finally:
-            (case_args.directory / "finished").write_bytes(b"")
-            if child.poll() is None:
-                child.kill()
-                child.wait(timeout=1)
-            if (case_args.directory / "background.json").exists():
-                limit = time.monotonic() + 1
-                while not (case_args.directory / "background.closed.json").exists() and time.monotonic() < limit:
-                    time.sleep(0.005)
-                assert (case_args.directory / "background.closed.json").exists(), "background fixture did not stop cooperatively"
-            os.close(master)
+            def cleanup_step(stage, action):
+                try:
+                    action()
+                except BaseException as error:
+                    cleanup_failures.append(error)
+                    result["cleanup_errors"].append({"stage": stage, "error": repr(error)})
+
+            cleanup_step("finished_marker", lambda: (case_args.directory / "finished").write_bytes(b""))
+
+            def stop_driver():
+                if child is not None and child.poll() is None:
+                    child.kill()
+                    child.wait(timeout=1)
+
+            cleanup_step("driver", stop_driver)
+            cleanup_step("background", lambda: cleanup_background(case_args.directory, result))
+            for descriptor in (master, slave):
+                if descriptor is not None:
+                    cleanup_step("pty_close", lambda descriptor=descriptor: os.close(descriptor))
+            result["driver_status"] = child.returncode if child is not None else None
+            result["pty_hex"] = output.hex()
+            result["excluded_during_payload"] = excluded_during_payload
+            result["files"] = {}
+            for path in sorted(case_args.directory.glob("*.json")):
+                def collect(path=path):
+                    result["files"][path.name] = json.loads(path.read_text())
+                cleanup_step("evidence_read:" + path.name, collect)
+            publish(args.results, case + ".json", result)
+        if primary_error is not None:
+            raise primary_error
+        if cleanup_failures:
+            raise cleanup_failures[0]
+        return result
 
 
 def check(case, result):
     files = result["files"]
+    assert result.get("primary_error") is None and not result.get("cleanup_errors"), result
     assert result["driver_status"] == 0, result
     assert "teardown.failure.json" not in files, result
     assert not any("expired" in name for name in files), result
@@ -573,7 +658,9 @@ def check(case, result):
     elif case == "background_group":
         background = files["background.json"]
         assert background["group"] != background["parent_group"], result
-        assert not (state["background_advanced_after_session"] and state["listener_available_before_fixture_cleanup"]), "ordinary shell job survived released custody: " + json.dumps(result)
+        observation = state["background_observation"]
+        assert observation["before"]["state"] == "live" and observation["after"]["state"] == "live" and observation["heartbeat_advanced"], "background assessment inconclusive without advancing live helper: " + json.dumps(result)
+        assert not observation["listener_available"], "ordinary shell job survived released custody: " + json.dumps(result)
         return
     else:
         payload = files["payload.json"]
@@ -641,7 +728,6 @@ def main():
                                                 "python": sys.version, "platform": platform.platform(), "cases": cases})
         for case in cases:
             result = capture(args, case)
-            publish(args.results, case + ".json", result)
             check(case, result)
             print(case + ": passed", flush=True)
     return 0
