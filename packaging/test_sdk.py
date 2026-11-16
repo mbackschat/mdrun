@@ -6,6 +6,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import re
 import shutil
 import tarfile
 import tempfile
@@ -88,7 +89,13 @@ class SdkArchiveTests(unittest.TestCase):
                                "Description-Content-Type": "text/markdown"}.items():
                 self.assertEqual(metadata[key], value)
             self.assertIsNone(metadata["Requires-Dist"])
-            self.assertIn("Experimental Python worker SDK", metadata.get_payload())
+            description = metadata.get_payload(decode=True).decode("utf-8")
+            maintained = (self.root / "sdk/python/README.md").read_text()
+            # Release descriptions resolve repository links to the source tag; preserve all other README content.
+            def without_link_targets(text):
+                return re.sub(r"(\[[^\]]+\])\([^)]+\)", r"\1", text)
+
+            self.assertEqual(without_link_targets(description), without_link_targets(maintained))
             wheel_metadata = BytesParser().parsebytes(result.read(info + "WHEEL"))
             self.assertEqual(wheel_metadata["Wheel-Version"], "1.0")
             self.assertEqual(wheel_metadata["Root-Is-Purelib"], "true")
