@@ -72,7 +72,7 @@ This section is for maintainers building distribution assets from the repository
 The [builder](../packaging/sdk.py) reads the version from Cargo, rejects JVM POM drift and uses an explicit production-file allowlist. It writes sorted ordinary tar members with fixed modes, ownership and timestamps, and gzip with no filename and a zero timestamp. Identical source files, prepared jars and Python/zlib toolchain reproduce identical compressed bytes; JVM preparation additionally depends on the selected Java 21 compiler. No source tree metadata or output directory is encoded in an archive. The same dependency-free builder emits the standard wheel using fixed ZIP timestamps/modes, a complete SHA-256/size `RECORD`, core metadata, the SDK package and license. Building the wheel requires only the Python standard library; neither a build backend nor package-index access is involved. Its format follows the [PyPA wheel specification](https://packaging.python.org/en/latest/specifications/binary-distribution-format/).
 
 ```sh
-python3 scripts/prepare_jvm.py --java-home "$JAVA_HOME" --download --output /prepared/jvm-sdk
+python3 scripts/prepare_jvm.py --java-home "$JAVA_HOME" --download --cache-dir "$HOME/.cache/mdrun/jvm" --output /prepared/jvm-sdk
 python3 packaging/sdk.py archive jvm dist --jvm-prepared /prepared/jvm-sdk
 python3 packaging/sdk.py archive node dist
 python3 packaging/sdk.py archive python dist
@@ -83,6 +83,8 @@ python3 packaging/qualify_sdk.py --archives dist --version 0.1.0 \
 ```
 
 JVM source preparation checks the exact dependency hash, conservative 14-day age, POM agreement and bundled notices before executing Java tools. Packaging independently rechecks prepared jar identities, SDK-only contents, embedded metadata and dependency notices. The [offline guards](../packaging/test_sdk.py) independently check archive contents, hashes, reproducibility and malformed/tampered preparation refusal; a mocked download guard checks the exact versioned GitHub URL and rejection of corrupted downloaded bytes.
+
+The optional dependency cache avoids repeated Maven Central downloads while preserving verification on every hit. The [JVM source-build guide](../sdk/jvm/README.md#build-the-sdk-from-source) explains bounded download retries and recovery from corrupt cache entries. CI and release packaging use the same lock-keyed cache per operating system; simultaneous first runs can still download separately before a cache has been saved.
 
 The [consumer qualifier](../packaging/qualify_sdk.py) copies the standalone helper and synthetic `read_file` applications into a new persistent workspace, prepares the version/digest-pinned archives, compiles the JVM consumer there, and independently launches each SDK-free cold application. It then verifies two literal file-output calls through the actual native host in cold and required-warm modes: zero cold workers, exactly one reused warm worker, exact route/status counts and clean cleanup are mandatory. It uses a controlled environment for both modes; the read-only applications do not observe the two explicitly ignored shell bookkeeping variables. Prepared bindings and `qualification.json` remain available for separate full-session measurements. The [release workflow](../.github/workflows/release.yml) runs this qualifier against its same-run native archive before publishing SDK assets. A configured workflow and local pass do not establish a hosted or published release; record revision/artifact-specific results in the [execution checklist](plans/execution.md).
 

@@ -1,4 +1,5 @@
 import hashlib
+from io import BytesIO
 import importlib.util
 import json
 import os
@@ -8,6 +9,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest import mock
+from urllib.error import HTTPError
 import zipfile
 
 
@@ -115,6 +117,109 @@ class PrepareJvmTests(unittest.TestCase):
                     preparation.prepare(self.java, None, self.output, now=self.now, download=True)
         download.assert_called_once_with(self.lock["dependencies"][0]["artifact_url"])
         run.assert_not_called()
+
+    def test_download_cache_avoids_network_and_revalidates_every_hit(self):
+        dependency = self.lock["dependencies"][0]
+        cache = self.root / "cache"
+        data = self.jar.read_bytes()
+        with mock.patch.object(preparation, "download_dependency", return_value=data) as download:
+            self.assertEqual(preparation.load_download(dependency, cache), data)
+            self.assertEqual(preparation.load_download(dependency, cache), data)
+            download.assert_called_once()
+            entries = list(cache.iterdir())
+            self.assertEqual(len(entries), 1)
+            entries[0].write_bytes(b"corrupt")
+            with self.assertRaisesRegex(ValueError, "SHA-256"):
+                preparation.load_download(dependency, cache)
+            download.assert_called_once()
+
+    def test_invalid_download_is_never_cached(self):
+        cache = self.root / "cache"
+        with mock.patch.object(preparation, "download_dependency", return_value=b"corrupt"):
+            with self.assertRaisesRegex(ValueError, "SHA-256"):
+                preparation.load_download(self.lock["dependencies"][0], cache)
+        self.assertFalse(cache.exists() and list(cache.iterdir()))
+
+    def test_failed_cache_publication_leaves_no_partial_entry(self):
+        cache = self.root / "cache"
+        with mock.patch.object(preparation, "download_dependency", return_value=self.jar.read_bytes()), mock.patch.object(Path, "replace", side_effect=OSError("disk full")):
+            with self.assertRaisesRegex(OSError, "disk full"):
+                preparation.load_download(self.lock["dependencies"][0], cache)
+        self.assertEqual(list(cache.iterdir()), [])
+
+    def test_cache_is_used_by_preparation_before_compilation(self):
+        dependency = self.lock["dependencies"][0]
+        cache = self.root / "cache"
+        cache.mkdir()
+        (cache / (dependency["sha256"] + ".jar")).write_bytes(b"corrupt")
+        with mock.patch.object(preparation, "download_dependency") as download, mock.patch.object(subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "SHA-256"):
+                preparation.prepare(self.java, None, self.output, now=self.now, download=True, cache_dir=cache)
+        download.assert_not_called()
+        run.assert_not_called()
+
+    def test_rate_limit_waits_then_returns_exact_bytes(self):
+        url = self.lock["dependencies"][0]["artifact_url"]
+        error = HTTPError(url, 429, "rate limited", {"Retry-After": "7"}, BytesIO())
+        opener = mock.Mock()
+        opener.open.side_effect = [error, BytesIO(b"jar bytes")]
+        with mock.patch.object(preparation, "build_opener", return_value=opener), mock.patch.object(preparation, "sleep", create=True) as sleep:
+            self.assertEqual(preparation.download_dependency(url), b"jar bytes")
+        self.assertEqual(opener.open.call_count, 2)
+        sleep.assert_called_once_with(7)
+        self.assertTrue(error.fp.closed)
+
+    def test_repeated_transient_errors_have_finite_attempts_and_backoff(self):
+        url = self.lock["dependencies"][0]["artifact_url"]
+        for status in (429, 502, 503, 504):
+            with self.subTest(status=status):
+                opener = mock.Mock()
+                opener.open.side_effect = [HTTPError(url, status, "unavailable", {}, BytesIO()) for _ in range(3)]
+                with mock.patch.object(preparation, "build_opener", return_value=opener), mock.patch.object(preparation, "sleep") as sleep:
+                    with self.assertRaises(HTTPError):
+                        preparation.download_dependency(url)
+                self.assertEqual(opener.open.call_count, 3)
+                self.assertEqual(sleep.call_args_list, [mock.call(2), mock.call(4)])
+
+    def test_permanent_errors_and_long_retry_after_do_not_retry(self):
+        url = self.lock["dependencies"][0]["artifact_url"]
+        for status, headers in ((403, {}), (404, {}), (302, {}), (429, {"Retry-After": "120"}),
+                                (429, {"Retry-After": "9" * 400})):
+            with self.subTest(status=status, headers=headers):
+                opener = mock.Mock()
+                opener.open.side_effect = HTTPError(url, status, "refused", headers, BytesIO())
+                with mock.patch.object(preparation, "build_opener", return_value=opener), mock.patch.object(preparation, "sleep") as sleep:
+                    with self.assertRaises(HTTPError):
+                        preparation.download_dependency(url)
+                opener.open.assert_called_once()
+                sleep.assert_not_called()
+
+    def test_retry_after_accepts_dates_and_ignores_invalid_values(self):
+        now = datetime(2026, 11, 16, 12, 0, 0, tzinfo=timezone.utc)
+        self.assertEqual(preparation.retry_delay("Mon, 16 Nov 2026 12:00:09 GMT", 2, now), 9)
+        for value in (None, "bad", "-1", "NaN"):
+            with self.subTest(value=value):
+                self.assertEqual(preparation.retry_delay(value, 4, now), 4)
+        self.assertEqual(preparation.retry_delay("0", 2, now), 2)
+
+    def test_oversized_download_is_not_retried(self):
+        opener = mock.Mock()
+        opener.open.return_value = BytesIO(b"12345")
+        with mock.patch.object(preparation, "build_opener", return_value=opener), mock.patch.object(preparation, "MAX_DOWNLOAD_BYTES", 4), mock.patch.object(preparation, "sleep") as sleep:
+            with self.assertRaisesRegex(ValueError, "byte limit"):
+                preparation.download_dependency(self.lock["dependencies"][0]["artifact_url"])
+        opener.open.assert_called_once()
+        sleep.assert_not_called()
+
+    @unittest.skipUnless(os.environ.get("MDRUN_JAVA_HOME"), "set MDRUN_JAVA_HOME to exercise a real Java 21 toolchain")
+    def test_real_jdk_cache_miss_and_hit_produce_identical_preparations(self):
+        cache = self.root / "cache"
+        java = Path(os.environ["MDRUN_JAVA_HOME"])
+        with mock.patch.object(preparation, "download_dependency", return_value=self.jar.read_bytes()) as download:
+            first = preparation.prepare(java, None, self.output, now=self.now, download=True, cache_dir=cache)
+            second = preparation.prepare(java, None, self.root / "again", now=self.now, download=True, cache_dir=cache)
+        download.assert_called_once()
+        self.assertEqual(first, second)
 
     @unittest.skipUnless(os.environ.get("MDRUN_JAVA_HOME"), "set MDRUN_JAVA_HOME to exercise a real Java 21 toolchain")
     def test_real_jdk_produces_repeatable_sdk_only_jar_and_relative_manifest(self):

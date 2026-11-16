@@ -17,9 +17,9 @@ SPEC.loader.exec_module(sdk_builder)
 PACKAGE = "io/github/mbackschat/mdrun/fixture/"
 
 
-def prepare(java_home, jackson_core, output, *, download=False):
+def prepare(java_home, jackson_core, output, *, download=False, cache_dir=None):
     java_home, output = Path(java_home).resolve(), Path(output).resolve()
-    manifest = sdk_builder.prepare(java_home, jackson_core, output, download=download)
+    manifest = sdk_builder.prepare(java_home, jackson_core, output, download=download, cache_dir=cache_dir)
     classpath = os.pathsep.join(str(output / entry["path"]) for entry in manifest["classpath"])
     with tempfile.TemporaryDirectory(prefix="fixture-", dir=output) as temporary:
         classes = Path(temporary)
@@ -53,10 +53,11 @@ def main():
     dependency = parser.add_mutually_exclusive_group(required=True)
     dependency.add_argument("--jackson-core", type=Path)
     dependency.add_argument("--download", action="store_true")
+    parser.add_argument("--cache-dir", type=Path, help="reuse verified dependency bytes with --download")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     print(json.dumps(prepare(args.java_home, args.jackson_core,
-                             args.output, download=args.download), sort_keys=True))
+                             args.output, download=args.download, cache_dir=args.cache_dir), sort_keys=True))
 
 
 if __name__ == "__main__":

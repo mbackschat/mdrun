@@ -1,14 +1,18 @@
-"""Prepare the experimental JVM SDK with a Java 21 JDK and a hash-locked dependency."""
+"""Prepare the JVM SDK with a Java 21 JDK and a hash-locked dependency."""
 
 import argparse
 from datetime import date, datetime, time, timedelta, timezone
+from email.utils import parsedate_to_datetime
 import hashlib
 from io import BytesIO
 import json
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tempfile
+from time import sleep
+from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 import xml.etree.ElementTree as ET
 import zipfile
@@ -19,6 +23,8 @@ SDK_ROOT = ROOT / "sdk/jvm"
 PACKAGE = "io/github/mbackschat/mdrun/sdk"
 MAVEN_NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 MAX_DOWNLOAD_BYTES = 16 * 1024 * 1024
+DOWNLOAD_ATTEMPTS = 3
+MAX_RETRY_DELAY = 30
 
 
 def sha256(data):
@@ -79,12 +85,63 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
+def retry_delay(value, fallback, now):
+    """Honor Retry-After seconds or HTTP dates without shortening the backoff."""
+    if value is None:
+        return fallback
+    try:
+        seconds = int(value) if re.fullmatch(r"[0-9]+", value) else (parsedate_to_datetime(value) - now).total_seconds()
+    except (ValueError, TypeError, OverflowError):
+        return fallback
+    return max(fallback, seconds)
+
+
 def download_dependency(url):
     request = Request(url, headers={"User-Agent": "mdrun JVM preparation (github.com/mbackschat/mdrun)"})
-    with build_opener(NoRedirect()).open(request, timeout=30) as response:
-        data = response.read(MAX_DOWNLOAD_BYTES + 1)
-    if len(data) > MAX_DOWNLOAD_BYTES:
-        raise ValueError("Jackson core download exceeds the preparation byte limit")
+    opener = build_opener(NoRedirect())
+    for attempt in range(DOWNLOAD_ATTEMPTS):
+        try:
+            with opener.open(request, timeout=30) as response:
+                data = response.read(MAX_DOWNLOAD_BYTES + 1)
+        except HTTPError as error:
+            error.close()
+            if error.code not in (429, 502, 503, 504) or attempt == DOWNLOAD_ATTEMPTS - 1:
+                raise
+            delay = retry_delay(error.headers.get("Retry-After"), 2 ** (attempt + 1), datetime.now(timezone.utc))
+            if delay > MAX_RETRY_DELAY:
+                print(f"Maven Central Retry-After exceeds the {MAX_RETRY_DELAY}s retry budget; stopping", file=sys.stderr)
+                raise
+            print(f"Maven Central HTTP {error.code}; retry {attempt + 2}/{DOWNLOAD_ATTEMPTS} in {delay:g}s", file=sys.stderr)
+            sleep(delay)
+            continue
+        if len(data) > MAX_DOWNLOAD_BYTES:
+            raise ValueError("Jackson core download exceeds the preparation byte limit")
+        return data
+
+
+def load_download(dependency, cache_dir=None):
+    """Validate every cache hit and atomically cache only verified downloads."""
+    cached = Path(cache_dir) / (dependency["sha256"] + ".jar") if cache_dir is not None else None
+    if cached is not None and cached.exists():
+        with cached.open("rb") as source:
+            data = source.read(MAX_DOWNLOAD_BYTES + 1)
+        try:
+            validate_dependency_jar(data, dependency)
+        except ValueError as error:
+            raise ValueError(f"invalid JVM dependency cache {cached}: {error}; remove this entry (and its GitHub Actions cache, if restored) before retrying") from error
+        return data
+    data = download_dependency(dependency["artifact_url"])
+    validate_dependency_jar(data, dependency)
+    if cached is not None:
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=cached.parent, prefix=".download-", delete=False) as temporary:
+            staged = Path(temporary.name)
+            try:
+                temporary.write(data)
+                temporary.close()
+                staged.replace(cached)
+            finally:
+                staged.unlink(missing_ok=True)
     return data
 
 
@@ -97,14 +154,19 @@ def validate_jdk(java_home):
             raise ValueError(f"Java 21 JDK is missing bin/{name}")
 
 
-def prepare(java_home, jackson_core, output, *, now=None, download=False):
+def prepare(java_home, jackson_core, output, *, now=None, download=False, cache_dir=None):
     """Build an SDK-only jar and return its relative, deterministic classpath manifest."""
     now = now or datetime.now(timezone.utc)
     dependency = validate_dependency(SDK_ROOT, now)
     if (jackson_core is None) == (not download):
         raise ValueError("provide exactly one of --jackson-core or --download")
-    data = download_dependency(dependency["artifact_url"]) if download else Path(jackson_core).read_bytes()
-    validate_dependency_jar(data, dependency)
+    if cache_dir is not None and not download:
+        raise ValueError("--cache-dir requires --download")
+    if download:
+        data = load_download(dependency, cache_dir)
+    else:
+        data = Path(jackson_core).read_bytes()
+        validate_dependency_jar(data, dependency)
     java_home, output = Path(java_home).resolve(), Path(output).resolve()
     validate_jdk(java_home)
     sources = sorted((SDK_ROOT / "src/main/java" / PACKAGE).rglob("*.java"))
@@ -154,10 +216,11 @@ def main():
     dependency = parser.add_mutually_exclusive_group(required=True)
     dependency.add_argument("--jackson-core", type=Path, help="prepared Jackson core jar matching the lock")
     dependency.add_argument("--download", action="store_true", help="fetch the exact locked artifact from Maven Central")
+    parser.add_argument("--cache-dir", type=Path, help="reuse verified dependency bytes with --download")
     parser.add_argument("--output", type=Path, required=True, help="new or empty preparation directory")
     args = parser.parse_args()
     try:
-        manifest = prepare(args.java_home, args.jackson_core, args.output, download=args.download)
+        manifest = prepare(args.java_home, args.jackson_core, args.output, download=args.download, cache_dir=args.cache_dir)
     except (OSError, ValueError, KeyError, ET.ParseError, subprocess.SubprocessError) as error:
         detail = error.stderr if isinstance(error, subprocess.CalledProcessError) else str(error)
         parser.exit(1, f"JVM preparation failed: {detail}\n")

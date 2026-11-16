@@ -78,9 +78,14 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - name: Restore verified JVM dependency cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/mdrun/jvm
+          key: jvm-dependency-${{ runner.os }}-${{ hashFiles('sdk/jvm/dependencies.lock.json') }}
       - name: Prepare hash-locked JVM SDK and independent cold fixture
-        timeout-minutes: 2
-        run: python3 tests/runtime/jvm/prepare.py --java-home "$JAVA_HOME" --download --output "$RUNNER_TEMP/jvm-fixture"
+        timeout-minutes: 4
+        run: python3 tests/runtime/jvm/prepare.py --java-home "$JAVA_HOME" --download --cache-dir "$HOME/.cache/mdrun/jvm" --output "$RUNNER_TEMP/jvm-fixture"
       - name: Qualify the cooperative JVM SDK
         timeout-minutes: 1
         env:

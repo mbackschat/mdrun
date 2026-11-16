@@ -132,9 +132,15 @@ jobs:
           mkdir "$RUNNER_TEMP/sdk-host"
           tar -xzf "$RUNNER_TEMP/native-host/mdrun-v$(python3 packaging/distribution.py version)-x86_64-unknown-linux-musl.tar.gz" -C "$RUNNER_TEMP/sdk-host"
           echo "MDRUN_SDK_HOST=$RUNNER_TEMP/sdk-host/mdrun-v$(python3 packaging/distribution.py version)-x86_64-unknown-linux-musl/mdrun" >> "$GITHUB_ENV"
+      - name: Restore verified JVM dependency cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/mdrun/jvm
+          key: jvm-dependency-${{ runner.os }}-${{ hashFiles('sdk/jvm/dependencies.lock.json') }}
       - name: Build versioned runtime SDK archives
+        timeout-minutes: 4
         run: |
-          python3 scripts/prepare_jvm.py --java-home "$JAVA_HOME" --download --output "$RUNNER_TEMP/jvm-sdk"
+          python3 scripts/prepare_jvm.py --java-home "$JAVA_HOME" --download --cache-dir "$HOME/.cache/mdrun/jvm" --output "$RUNNER_TEMP/jvm-sdk"
           python3 packaging/sdk.py archive jvm dist --jvm-prepared "$RUNNER_TEMP/jvm-sdk"
           python3 packaging/sdk.py archive node dist
           python3 packaging/sdk.py archive python dist

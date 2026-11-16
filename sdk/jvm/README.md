@@ -117,6 +117,10 @@ The [POM](pom.xml) exposes the exact Jackson dependency to standard consumers an
 
 Use `--download` instead of `--jackson-core` during preparation to request the exact locked Maven Central URL. Downloads reject redirects and must match the locked hash before compilation. The [dependency evidence](../../docs/dependencies.md#jvm-sdk-development-dependency) records canonical-source verification and its historical qualification limits; SDK distribution and application qualification remain separate gates.
 
+Add `--cache-dir "$HOME/.cache/mdrun/jvm"` to reuse the downloaded dependency. Every cache hit is checked against the reviewed SHA-256 and required notices before Java runs; only verified downloads are written, using atomic replacement. A corrupt entry fails preparation with its path: remove that entry before retrying. If GitHub Actions restored it, also delete the matching Actions cache because saved cache keys are immutable. The cache contains the dependency JAR, not compiled SDK or application classes.
+
+Downloads make at most three attempts for HTTP 429, 502, 503 or 504, with 2-second and 4-second backoff and a 30-second socket timeout per attempt. A valid `Retry-After` value (seconds or HTTP date) can lengthen either wait up to 30 seconds; a longer requested wait stops preparation instead of retrying early. Redirects, other HTTP errors, transport errors and integrity failures are not retried. Retry diagnostics go to stderr. Caching reduces repeated requests; these bounded retries can absorb brief throttling but do not guarantee availability during a sustained Maven Central limit.
+
 ## Qualification and evidence
 
 Each application still requires its own parity and resource qualification. The [execution checklist](../../docs/plans/execution.md) records runtime evidence and artifact checks for 0.1.0.
