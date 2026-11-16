@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add experimental `verify-many` with bounded document admission, shared resource custody, ordered output and aggregate reports; platform/lifecycle qualification remains open.
+- Preserve batch failure reports and bounded diagnostics, reject report aliases before execution, and publish session reports atomically.
+- Preserve JVM invocation interrupt semantics and strengthen Node framing, request identity and inert empty-output handling.
+- Add focused offline guides, actionable command help and generated manual pages, with an executed first-use recording.
+- Document version 1 session/batch report fields, exact cold reasons, signal/forwarding statuses and batch output/concurrency limits.
 - Add experimental native managed sessions, private executable forwarding, independent cold routing, custody/reporting with mdrun package identity, and a cooperative Node SDK; runtime and consumer qualification remains in progress.
 - Add an experimental Java 21 SDK with callable application hooks, lazy binary streams, reset/release gating, sticky invocation invalidation, hash-locked preparation and an application character-output example; JVM and consumer qualification remains in progress.
 - Add an experimental dependency-free Python SDK with explicit application hooks, lazy binary streams, cooperative cancellation and sticky failure; native-host parity and protocol controls qualify the initial boundary.

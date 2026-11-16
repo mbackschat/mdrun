@@ -16,6 +16,9 @@ pub fn execute(action: &Action, workdir: Option<&Path>) -> Result<i32, String> {
     let remote_url = std::env::var("SHOWBOAT_REMOTE_URL").ok();
     let remote = remote_url.as_deref();
     match action {
+        Action::Guide { topic } => {
+            crate::guides::print(*topic).map_err(|error| error.to_string())?;
+        }
         Action::Init { file: path, title } => {
             if path.exists() {
                 return Err(format!("file already exists: {}", path.display()));
@@ -158,6 +161,15 @@ pub fn execute(action: &Action, workdir: Option<&Path>) -> Result<i32, String> {
         } => {
             if let Some(binding) = binding {
                 let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
+                if let Some(report) = report {
+                    let mut protected = vec![cwd.join(path), cwd.join(binding)];
+                    if let Some(output) = output {
+                        protected.push(cwd.join(output));
+                    }
+                    if crate::session::report::conflicts(&cwd.join(report), &protected)? {
+                        return Err("execution report conflicts with an input or output".to_owned());
+                    }
+                }
                 let mut command = vec![
                     std::env::current_exe()
                         .map_err(|error| error.to_string())?
@@ -214,6 +226,9 @@ pub fn execute(action: &Action, workdir: Option<&Path>) -> Result<i32, String> {
             stdout(&differences)?;
             return Ok(i32::from(!replacements.is_empty()));
         }
+        Action::VerifyMany { options, files } => {
+            return crate::session::batch::run(options, files, workdir);
+        }
         Action::Extract {
             file: path,
             filename,
@@ -256,6 +271,15 @@ pub fn execute(action: &Action, workdir: Option<&Path>) -> Result<i32, String> {
         }
         Action::Anchor => {
             return crate::session::custody::run_anchor().map_err(|error| error.to_string());
+        }
+        Action::BatchPublish {
+            config,
+            diagnostics_only,
+        } => {
+            return Ok(crate::session::batch::run_publisher(
+                config,
+                *diagnostics_only,
+            ));
         }
     }
     Ok(0)

@@ -2,6 +2,8 @@ use clap::{Parser, Subcommand};
 use std::ffi::OsString;
 use std::path::PathBuf;
 
+mod help;
+
 /// Create, run, and verify executable Markdown documents.
 ///
 /// Documents combine Markdown notes, executable code, and recorded output.
@@ -9,7 +11,8 @@ use std::path::PathBuf;
 #[derive(Debug, Parser)]
 #[command(
     version,
-    about = "Create, run, and verify executable Markdown documents."
+    about = "Create, run, and verify executable Markdown documents.",
+    after_long_help = help::ROOT
 )]
 pub struct Cli {
     /// Execute code in DIR while resolving document paths from the current directory.
@@ -23,6 +26,7 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Create a document with a title, timestamp, and unique identifier.
+    #[command(after_long_help = help::INIT)]
     Init {
         /// Document to create; the file must not already exist.
         file: PathBuf,
@@ -31,6 +35,7 @@ pub enum Command {
     },
 
     /// Append a Markdown note to a document.
+    #[command(after_long_help = help::NOTE)]
     Note {
         /// Existing document to update.
         file: PathBuf,
@@ -39,6 +44,7 @@ pub enum Command {
     },
 
     /// Execute code and append its combined stdout and stderr.
+    #[command(after_long_help = help::EXEC)]
     Exec {
         /// Existing document to update.
         file: PathBuf,
@@ -49,6 +55,7 @@ pub enum Command {
     },
 
     /// Copy an image and append its Markdown reference.
+    #[command(after_long_help = help::IMAGE)]
     Image {
         /// Existing document to update.
         file: PathBuf,
@@ -57,12 +64,14 @@ pub enum Command {
     },
 
     /// Remove the most recent note or code/output pair.
+    #[command(after_long_help = help::POP)]
     Pop {
         /// Existing document to update.
         file: PathBuf,
     },
 
     /// Replay executable blocks and report changed output.
+    #[command(after_long_help = help::VERIFY)]
     Verify {
         /// Document to replay.
         file: PathBuf,
@@ -83,7 +92,18 @@ pub enum Command {
         require_warm: bool,
     },
 
+    /// Verify independent documents with bounded cooperative sessions.
+    #[command(after_long_help = help::VERIFY_MANY)]
+    VerifyMany {
+        #[command(flatten)]
+        options: crate::session::batch::Options,
+        /// Documents to verify, in input order.
+        #[arg(required = true, num_args = 1.., value_name = "FILE")]
+        files: Vec<PathBuf>,
+    },
+
     /// Print shell commands that recreate a document.
+    #[command(after_long_help = help::EXTRACT)]
     Extract {
         /// Document to extract.
         file: PathBuf,
@@ -93,6 +113,7 @@ pub enum Command {
     },
 
     /// List executable blocks without running commands.
+    #[command(after_long_help = help::LIST)]
     List {
         /// Documents to inspect, in inventory order.
         #[arg(required = true, num_args = 1.., value_name = "FILE")]
@@ -106,6 +127,7 @@ pub enum Command {
     },
 
     /// Print one executable block's complete fenced source without running it.
+    #[command(after_long_help = help::PREVIEW)]
     Preview {
         /// Document to inspect.
         file: PathBuf,
@@ -114,12 +136,20 @@ pub enum Command {
     },
 
     /// Run an author command with one managed application binding.
+    #[command(after_long_help = help::SESSION)]
     Session {
         #[command(flatten)]
         options: crate::session::Options,
         /// Command and arguments to execute within the managed session.
         #[arg(last = true, required = true)]
         command: Vec<OsString>,
+    },
+
+    /// Read a focused guide offline, or list the available topics.
+    Guide {
+        /// Workflow or reference topic; omit to list guides.
+        #[arg(value_enum)]
+        topic: Option<crate::guides::Topic>,
     },
 
     #[command(name = "__custodian", hide = true)]
@@ -130,6 +160,14 @@ pub enum Command {
 
     #[command(name = "__anchor", hide = true)]
     Anchor,
+
+    #[command(name = "__batch-publish", hide = true)]
+    BatchPublish {
+        #[arg(long)]
+        config: PathBuf,
+        #[arg(long)]
+        diagnostics_only: bool,
+    },
 }
 
 #[cfg(all(test, unix))]

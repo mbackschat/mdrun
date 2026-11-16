@@ -8,6 +8,9 @@ use std::time::{Duration, Instant};
 #[path = "session_context.rs"]
 mod context;
 
+#[path = "session_batch.rs"]
+mod batch;
+
 #[path = "session_node.rs"]
 mod node_parity;
 

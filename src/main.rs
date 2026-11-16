@@ -2,6 +2,9 @@ mod app;
 mod cli;
 mod discovery;
 mod document;
+mod guides;
+#[cfg(test)]
+mod manual;
 mod remote;
 mod session;
 

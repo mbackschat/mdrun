@@ -2,6 +2,30 @@
 
 Status: document CLI and discovery are implemented; managed sessions and runtime SDKs remain experimental. The [execution checklist](plans/execution.md) owns remaining lifecycle, runtime and release gates, including unresolved Linux scope-cleanup qualification.
 
+## External review remediation
+
+The independent review of the pre-rewrite source and unfinished working tree on 2026-11-16 found the session/batch slice unready. Passing ordinary tests and SDK peer suites does not establish native-host, Linux, installed-package or release qualification. The following findings remain open until independently discriminating regression guards and the applicable platform checks pass.
+
+| Finding | Required outcome |
+| --- | --- |
+| F1: batch infrastructure failures lose diagnostics and retain stale reports | Replace stale success before execution; preserve every input and admitted result in failure reports; diagnose custody startup failure and remove workspaces that never acquired custody |
+| F2: observed Linux sibling-scope termination | Reproduce with process/group observations, establish the cause, and prove stopping one scope preserves healthy peers; a later passing run does not close this gate |
+| F3: custody test port handoff race | Prevent overlapping fixture reservations through readiness and distinguish fixture admission failures from product scope failures |
+| F4: JVM pending interrupts fault ordinary output | Preserve expected output/status and interrupt semantics with a focused peer regression |
+| F5: help and guide contract drift | Verify reason names, exit statuses, scheduling/admission, output labels and report fields against source and executable controls |
+| F6: single-session report aliasing and lost diagnostics | Reject input aliases before execution; publish reports atomically and preserve cleanup diagnostics if reporting fails |
+| F7: Node protocol discrepancies | Qualify request identity, JSON/Unicode validation, fault reasons and inert empty I/O against the shared contract |
+| F8: weak peer-suite oracles | Prove refused calls never invoke applications and active uncredited input fails; align applicable lifecycle controls across SDKs |
+| F9: batch output limits | Document disk spool growth and input-ordered publication delays; keep these explicit in the public contract |
+
+The review also identifies maintenance risks: duplicated broker/custodian scope transitions, a large batch orchestration closure, unused standalone custody configuration in scoped execution, and unchecked empty process argv. Fix the failure mechanisms without introducing further state-machine duplication; retain independent transition validation. Architecture and SDK usage documentation, versioned GitHub SDK artifacts with pinned local/CI consumption, release qualification gates and toolchain attribution remain required product work. Registry publication alone is [deferred](DEFERRED.md).
+
+Local remediation on 2026-11-16 addresses F1 and F3–F9: failure reporting now runs outside batch orchestration, stale reports are invalidated before admission, shared atomic report publication rejects existing and dangling aliases, failed startup reaps its custodian, and bounded diagnostics cannot hold the parent on an unread pipe. SDK regressions cover interrupts, identity/framing, refusal effects and active uncredited input. The [architecture](architecture.md) and owning guides explain the implemented boundaries and limitations. Standalone custody configuration is now constructed only in standalone execution. The large scheduler and duplicate scope validation remain maintenance surfaces; the empty-argv concern remains unqualified.
+
+The current local checks pass: 82 ordinary Rust unit tests, 80 ordinary integration tests, all 29 runtime-gated native integration tests, eight broker controls, Clippy, manual generation/freshness/rendering and package-asset guards. SDK peer suites pass 51 Node, 17 JVM and 21 Python tests; independent refusal-effect mutations are rejected. These are dated local observations, not release qualification. Fresh macOS/Linux hosted checks must cover the committed source before accepting cross-platform remediation.
+
+F2 remains open. Linux investigation passed 120 concurrent scope-isolation attempts with distinct observed process groups; the updated custody suite also passed 20 parallel repetitions. A controlled first-anchor suspension reproduced sibling SIGTERM only after cleanup uncertainty triggered the specified batch-wide shutdown. This proves a legitimate alternative mechanism, not the cause of the earlier hosted observation: its preceding event trace is unavailable. New failure diagnostics retain parent/group identities and payload snapshots. Do not describe the historical failure as fixed or as proven cross-scope signal misrouting.
+
 ## Qualification after history cleanup
 
 Earlier qualification results remain as historical narrative tied to their original revision and artifact identities. The associated GitHub Actions records were removed; those results do not qualify the rewritten revision. Fresh macOS/Linux CI, runtime controls and applicable distribution checks must pass on an identified rewritten revision before current hosted qualification is claimed. Historical completion labels below describe the earlier checkpoints.

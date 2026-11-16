@@ -97,6 +97,179 @@ fn help_exposes_document_commands_and_global_options() {
 }
 
 #[test]
+fn offline_guides_match_the_maintained_sources_without_creating_files() {
+    let fixture = Fixture::new();
+    for (topic, expected) in [
+        (None, include_str!("../../docs/guides/README.md")),
+        (
+            Some("documents"),
+            include_str!("../../docs/guides/documents.md"),
+        ),
+        (
+            Some("sessions"),
+            include_str!("../../docs/guides/sessions.md"),
+        ),
+        (
+            Some("reference"),
+            include_str!("../../docs/guides/reference.md"),
+        ),
+    ] {
+        let mut args = vec!["guide"];
+        args.extend(topic);
+        let output = fixture.run(&args);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(output.stdout, expected.as_bytes());
+        assert!(output.stderr.is_empty());
+    }
+    let invalid = fixture.run(&["guide", "unknown-topic"]);
+    assert_eq!(invalid.status.code(), Some(2));
+    assert!(invalid.stdout.is_empty());
+    assert_eq!(fs::read_dir(&fixture.0).unwrap().count(), 0);
+}
+
+#[test]
+fn short_help_stays_compact_while_long_help_supplies_a_working_recipe() {
+    let short = run(&["-h"]);
+    let long = run(&["--help"]);
+    assert!(short.status.success() && long.status.success());
+    let short = String::from_utf8(short.stdout).unwrap();
+    let long = String::from_utf8(long.stdout).unwrap();
+    assert!(short.len() < long.len());
+    assert!(!short.contains("A repeatable greeting"));
+    assert!(long.contains("mdrun init demo.md 'A repeatable greeting'"));
+    assert!(long.contains("mdrun verify demo.md"));
+    assert!(!long.contains("__custodian"));
+    assert!(!long.contains("__anchor"));
+}
+
+#[test]
+fn root_help_recipe_records_literal_output_and_replays_without_edits() {
+    let fixture = Fixture::new();
+    fs::create_dir(fixture.0.join("bin")).unwrap();
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_mdrun"), fixture.0.join("bin/mdrun")).unwrap();
+    let help = String::from_utf8(run(&["--help"]).stdout).unwrap();
+    let lines: Vec<_> = help
+        .lines()
+        .filter_map(|line| line.strip_prefix("    mdrun "))
+        .map(|line| format!("mdrun {line}"))
+        .collect();
+    assert_eq!(
+        lines.len(),
+        4,
+        "the quick start must remain one finite recipe"
+    );
+    let output = Command::new("/bin/sh")
+        .args(["-eu", "-c", &lines.join("\n")])
+        .current_dir(&fixture.0)
+        .env_clear()
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", fixture.0.join("bin").display()),
+        )
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, b"hello from mdrun\n");
+    let recorded = fs::read(fixture.0.join("demo.md")).unwrap();
+    assert!(String::from_utf8_lossy(&recorded).contains("```output\nhello from mdrun\n```"));
+    assert!(fixture.run(&["verify", "demo.md"]).status.success());
+    assert_eq!(fs::read(fixture.0.join("demo.md")).unwrap(), recorded);
+}
+
+#[test]
+fn readme_recipe_and_recording_match_then_expose_changed_output_without_editing_input() {
+    let fixture = Fixture::new();
+    let readme = include_str!("../../README.md");
+    let recipe = readme
+        .split_once("```sh\n")
+        .unwrap()
+        .1
+        .split_once("```")
+        .unwrap()
+        .0;
+    assert_eq!(recipe.lines().count(), 4);
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_mdrun"), fixture.0.join("mdrun")).unwrap();
+    let output = Command::new("/bin/sh")
+        .args(["-eu", "-c", recipe])
+        .current_dir(&fixture.0)
+        .env_clear()
+        .env("PATH", format!("{}:/usr/bin:/bin", fixture.0.display()))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, b"hello from mdrun\n");
+    let excerpt = readme
+        .split_once("````markdown\n")
+        .unwrap()
+        .1
+        .split_once("````")
+        .unwrap()
+        .0;
+    let recorded = fs::read_to_string(fixture.0.join("demo.md")).unwrap();
+    assert!(recorded.contains(excerpt));
+    let retained = include_str!("../../docs/examples/greeting.md");
+    assert!(retained.contains(excerpt));
+    fs::write(fixture.0.join("retained.md"), retained).unwrap();
+    assert!(fixture.run(&["verify", "retained.md"]).status.success());
+
+    let changed = recorded.replace(
+        "printf \"hello from mdrun\\n\"",
+        "printf \"changed greeting\\n\"",
+    );
+    assert_ne!(changed, recorded);
+    fs::write(fixture.0.join("demo.md"), &changed).unwrap();
+    let mismatch = fixture.run(&["verify", "demo.md"]);
+    assert_eq!(mismatch.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&mismatch.stdout).contains("changed greeting"));
+    assert_eq!(
+        fs::read_to_string(fixture.0.join("demo.md")).unwrap(),
+        changed
+    );
+    let updated = fixture.run(&["verify", "demo.md", "--output", "candidate.md"]);
+    assert_eq!(updated.status.code(), Some(1));
+    assert_eq!(
+        fs::read_to_string(fixture.0.join("demo.md")).unwrap(),
+        changed
+    );
+    let candidate = fs::read_to_string(fixture.0.join("candidate.md")).unwrap();
+    assert!(candidate.contains("```output\nchanged greeting\n```"));
+    assert!(fixture.run(&["verify", "candidate.md"]).status.success());
+
+    let multiline = readme
+        .split_once("```sh\ncat <<'CODE'")
+        .unwrap()
+        .1
+        .split_once("```")
+        .unwrap()
+        .0;
+    let output = Command::new("/bin/sh")
+        .args(["-eu", "-c", &format!("cat <<'CODE'{multiline}")])
+        .current_dir(&fixture.0)
+        .env_clear()
+        .env("PATH", format!("{}:/usr/bin:/bin", fixture.0.display()))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, b"first\nsecond\n");
+}
+
+#[test]
 fn command_help_uses_each_commands_arguments_and_options() {
     for command in ["init", "note", "exec", "image", "pop", "verify", "extract"] {
         let output = run(&[command, "--help"]);
@@ -270,4 +443,34 @@ fn native_title_and_note_arguments_keep_non_utf8_bytes() {
     let source = fs::read(fixture.0.join(filename)).unwrap();
     assert!(source.starts_with(b"# Title \xff\n"));
     assert!(source.ends_with(b"\nNote \xfe\n"));
+}
+
+#[test]
+fn session_guide_documents_host_cold_reason_names() {
+    use std::collections::BTreeSet;
+
+    let context = include_str!("../../src/session/context.rs");
+    let mut reasons: BTreeSet<_> = context
+        .split("return Some(\"")
+        .skip(1)
+        .map(|literal| literal.split_once('"').unwrap().0)
+        .collect();
+    let host = include_str!("../../src/session/host.rs");
+    assert!(host.contains("Some(\"explicit_cold\")"));
+    reasons.insert("explicit_cold");
+    let guide = include_str!("../../docs/guides/sessions.md");
+    let section = guide
+        .split_once("## Cold route reasons\n")
+        .expect("the session guide must name report reason keys")
+        .1
+        .split("\n## ")
+        .next()
+        .unwrap();
+    let documented: BTreeSet<_> = section
+        .lines()
+        .filter_map(|line| line.strip_prefix("| `"))
+        .map(|row| row.split_once('`').unwrap().0)
+        .collect();
+    assert_eq!(documented, reasons, "document actual cold_reasons keys");
+    assert!(!guide.contains("environment_mismatch"));
 }

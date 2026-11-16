@@ -1,9 +1,12 @@
+pub(crate) mod batch;
+pub(crate) mod broker;
 pub(crate) mod client;
 mod config;
 mod context;
 pub(crate) mod custody;
 pub(crate) mod host;
 mod platform;
+pub(crate) mod report;
 mod wire;
 
 use std::path::PathBuf;
@@ -14,7 +17,7 @@ pub enum Mode {
     Cold,
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Clone, Debug, clap::Args)]
 pub struct Options {
     /// Prepared application binding manifest.
     #[arg(long)]

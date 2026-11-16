@@ -1,10 +1,13 @@
 # Documentation
 
-Current status: document CLI and read-only discovery qualified on macOS/Linux, 2026-11-16. Session/SDK implementation is active; warm execution is not supported yet. Current documents below govern work; the research index maps the extracted conclusions to their maintained owners.
+Document CLI and read-only discovery are implemented; earlier macOS/Linux qualification does not qualify the rewritten revision, as explained in the [qualification note](PLAN.md#qualification-after-history-cleanup). Managed sessions and JVM, Node and Python SDKs are experimental; runtime and release qualification continues. Current documents below govern work; the research index maps the extracted conclusions to their maintained owners.
 
 | Document | Owns |
 | --- | --- |
+| [User guides](guides/README.md) | Offline-compatible document workflows, session setup and command reference |
+| [Recorded greeting](examples/greeting.md) | Executed README quick start with replayable output |
 | [Product contract](PRODUCT.md) | Current behavior, accepted goals and architectural boundaries |
+| [Architecture](architecture.md) | Native document/session components, runtime adapter boundary, custody, batch output and evidence limits |
 | [Implementation plan](PLAN.md) | Milestone ordering, open decisions and acceptance gates |
 | [Active plans](plans/README.md) | Detailed compatibility and consumer qualification |
 | [Proposed session protocol](plans/session-protocol.md) | Developing native/SDK contract and proof obligations before API freeze |

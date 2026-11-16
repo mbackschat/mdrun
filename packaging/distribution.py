@@ -30,6 +30,13 @@ def archive(root, version, target, output):
     for source in files.values():
         if not source.is_file():
             raise ValueError(f"missing release input: {source}")
+    man = root / "docs/man"
+    if not (man / "mdrun.1").is_file():
+        raise ValueError(f"missing release input: {man / 'mdrun.1'}")
+    for page in sorted(man.glob("*.1")):
+        if not page.is_file():
+            raise ValueError(f"invalid manpage input: {page}")
+        files[f"share/man/man1/{page.name}"] = page
     output.mkdir(parents=True, exist_ok=True)
     name = f"mdrun-v{version}-{target}"
     destination = output / f"{name}.tar.gz"

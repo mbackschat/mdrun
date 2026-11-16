@@ -26,6 +26,14 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
+      - name: Qualify shared native custody coordination
+        timeout-minutes: 1
+        run: |
+          MDRUN_NATIVE_TEST_BIN="$PWD/target/debug/mdrun" cargo test --locked --bin mdrun session::broker::tests:: -- --include-ignored
+      - name: Render generated manuals
+        if: runner.os == 'macOS'
+        run: |
+          MDRUN_MANDOC=/usr/bin/mandoc cargo test --locked --bin mdrun manual::render_with_mandoc -- --ignored
       - name: Check terminal fixture observation guards
         run: python3 -m unittest discover -s tests/runtime/session -p 'test_*.py'
       - name: Qualify controlling-terminal sessions

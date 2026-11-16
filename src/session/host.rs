@@ -8,6 +8,8 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt, symlink};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -15,6 +17,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use serde_json::{Value, json};
 
+use super::broker::{CustodyAccess, ScopedCustody};
 use super::client::{ClientConfig, NativeRequest, Reply};
 use super::config::{Binding, Connect, WorkerConfig};
 use super::context::{NativeContext, SESSION_ENV};
@@ -394,10 +397,11 @@ struct State {
     cold_calls: u64,
     cold_reasons: BTreeMap<String, u64>,
     application_statuses: Vec<Value>,
+    failure_observer: Option<Arc<AtomicBool>>,
 }
 
 impl State {
-    fn new() -> Self {
+    fn new(failure_observer: Option<Arc<AtomicBool>>) -> Self {
         Self {
             author: GroupState::default(),
             worker: GroupState::default(),
@@ -409,17 +413,28 @@ impl State {
             cold_calls: 0,
             cold_reasons: BTreeMap::new(),
             application_statuses: Vec::new(),
+            failure_observer,
         }
     }
 
     fn fail(&mut self, reason: impl Into<String>) {
+        self.observe_failure();
         self.infrastructure.get_or_insert_with(|| reason.into());
+    }
+
+    fn observe_failure(&self) {
+        if let Some(observer) = &self.failure_observer {
+            observer.store(true, Ordering::Release);
+        }
     }
 
     fn event(&mut self, event: CustodyEvent, active: Option<&mut Invocation>) {
         match event {
             CustodyEvent::Exited { id, status } => {
                 if id == "author" {
+                    if status_code(&status) != 0 {
+                        self.observe_failure();
+                    }
                     self.author.status = Some(status);
                 } else if id == "worker" {
                     if self.shutdown && status_code(&status) != 0 {
@@ -482,53 +497,179 @@ impl State {
     }
 }
 
+pub struct PreparedSession {
+    options: Options,
+    binding: Binding,
+    command: Vec<OsString>,
+    baseline: NativeContext,
+    baseline_cold: Option<&'static str>,
+    started: Instant,
+    deadline: Instant,
+    deadline_unix_ms: u64,
+    executable: PathBuf,
+    failure_observer: Option<Arc<AtomicBool>>,
+}
+
+pub struct AuthorStdio(pub [OwnedFd; 3]);
+
+impl AuthorStdio {
+    fn inherited() -> Result<Self, String> {
+        let duplicate = |descriptor| {
+            unsafe { BorrowedFd::borrow_raw(descriptor) }
+                .try_clone_to_owned()
+                .map_err(|_| "cannot duplicate author descriptor".to_owned())
+        };
+        Ok(Self([duplicate(0)?, duplicate(1)?, duplicate(2)?]))
+    }
+}
+
+pub struct SessionOutcome {
+    pub status: i32,
+    pub report: Value,
+    pub diagnostics: Vec<String>,
+}
+
+impl SessionOutcome {
+    fn publish(&self, report: Option<&mut super::report::ReportFile>) -> Result<(), String> {
+        for diagnostic in &self.diagnostics {
+            eprintln!("{diagnostic}");
+        }
+        if let Some(report) = report {
+            report.publish(&self.report)?;
+        }
+        Ok(())
+    }
+}
+
+impl PreparedSession {
+    pub fn from_context(
+        options: Options,
+        binding: Binding,
+        command: Vec<OsString>,
+        mut baseline: NativeContext,
+        workdir: Option<&Path>,
+        deadline: Instant,
+    ) -> Result<Self, String> {
+        if baseline
+            .environment_value(OsStr::new(SESSION_ENV))
+            .is_some()
+        {
+            return Err("nested managed sessions are unsupported".to_owned());
+        }
+        let started = Instant::now();
+        if command.is_empty() {
+            return Err("session requires an author command".to_owned());
+        }
+        baseline.apply_binding(&binding, workdir)?;
+        baseline.cwd = fs::canonicalize(&baseline.cwd)
+            .map_err(|_| "cannot resolve session working directory".to_owned())?;
+        if !baseline.cwd.is_dir() {
+            return Err("session working directory is not a directory".to_owned());
+        }
+        let baseline_cold = if options.mode == Mode::Cold {
+            Some("explicit_cold")
+        } else {
+            baseline.cold_reason(
+                &baseline,
+                &binding,
+                &[],
+                Terminal {
+                    stdin: false,
+                    stdout: false,
+                    stderr: false,
+                },
+            )
+        };
+        if options.require_warm && baseline_cold.is_some() {
+            return Err(
+                "warm execution is required but the baseline requires cold execution".to_owned(),
+            );
+        }
+        let deadline_unix_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| "system clock precedes epoch")?
+            .as_millis()
+            .checked_add(u128::from(remaining(deadline)?.as_millis() as u64))
+            .and_then(|value| u64::try_from(value).ok())
+            .ok_or("session deadline is not representable")?;
+        let executable = std::env::current_exe()
+            .map_err(|_| "cannot resolve native host executable".to_owned())?;
+        Ok(Self {
+            options,
+            binding,
+            command,
+            baseline,
+            baseline_cold,
+            started,
+            deadline,
+            deadline_unix_ms,
+            executable,
+            failure_observer: None,
+        })
+    }
+
+    pub fn observe_failure(mut self, observer: Arc<AtomicBool>) -> Self {
+        self.failure_observer = Some(observer);
+        self
+    }
+}
+
 pub fn run(options: &Options, command: &[OsString], workdir: Option<&Path>) -> Result<i32, String> {
     if std::env::var_os(SESSION_ENV).is_some() {
         return Err("nested managed sessions are unsupported".to_owned());
     }
     let started = Instant::now();
     let binding = Binding::from_file(&options.binding)?;
-    if command.is_empty() {
-        return Err("session requires an author command".to_owned());
-    }
-    let mut baseline = NativeContext::capture()?;
-    baseline.apply_binding(&binding, workdir)?;
-    baseline.cwd = fs::canonicalize(&baseline.cwd)
-        .map_err(|_| "cannot resolve session working directory".to_owned())?;
-    if !baseline.cwd.is_dir() {
-        return Err("session working directory is not a directory".to_owned());
-    }
-    let baseline_cold = if options.mode == Mode::Cold {
-        Some("explicit_cold")
-    } else {
-        baseline.cold_reason(
-            &baseline,
-            &binding,
-            &[],
-            Terminal {
-                stdin: false,
-                stdout: false,
-                stderr: false,
-            },
-        )
-    };
-    if options.require_warm && baseline_cold.is_some() {
-        return Err(
-            "warm execution is required but the baseline requires cold execution".to_owned(),
-        );
-    }
+    let baseline = NativeContext::capture()?;
+    let mut report_file = options
+        .report
+        .as_ref()
+        .map(|report| {
+            let report = baseline.cwd.join(report);
+            if super::report::conflicts(&report, &[baseline.cwd.join(&options.binding)])? {
+                return Err("execution report conflicts with the binding".to_owned());
+            }
+            super::report::ReportFile::prepare(report)
+        })
+        .transpose()?;
+    let stdio = AuthorStdio::inherited()?;
     let deadline = started
         .checked_add(Duration::from_millis(binding.session_timeout_ms))
         .ok_or("session deadline is not representable")?;
-    let deadline_unix_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| "system clock precedes epoch")?
-        .as_millis()
-        .checked_add(u128::from(remaining(deadline)?.as_millis() as u64))
-        .and_then(|value| u64::try_from(value).ok())
-        .ok_or("session deadline is not representable")?;
-    let executable =
-        std::env::current_exe().map_err(|_| "cannot resolve native host executable".to_owned())?;
+    let mut prepared = PreparedSession::from_context(
+        options.clone(),
+        binding,
+        command.to_vec(),
+        baseline,
+        workdir,
+        deadline,
+    )?;
+    prepared.started = started;
+    if let Some(report) = &report_file {
+        report.invalidate_previous()?;
+    }
+    let outcome = run_prepared(prepared, stdio, None)?;
+    outcome.publish(report_file.as_mut())?;
+    Ok(outcome.status)
+}
+
+pub fn run_prepared(
+    prepared: PreparedSession,
+    stdio: AuthorStdio,
+    scoped: Option<ScopedCustody>,
+) -> Result<SessionOutcome, String> {
+    let PreparedSession {
+        options,
+        binding,
+        command,
+        baseline,
+        baseline_cold,
+        started,
+        deadline,
+        deadline_unix_ms,
+        executable,
+        failure_observer,
+    } = prepared;
     let mut directory = PrivateDirectory::new()?;
     let bin = directory.path.join("bin");
     fs::DirBuilder::new()
@@ -573,23 +714,28 @@ pub fn run(options: &Options, command: &[OsString], workdir: Option<&Path>) -> R
     author_context.inject(&bin, &client_path)?;
     let mut author_argv = command.to_vec();
     author_argv[0] = resolve(&author_argv[0], &author_context)?.into_os_string();
-    let config = CustodyConfig {
-        resources: binding
-            .resources
-            .iter()
-            .map(|resource| resource.socket_addr())
-            .collect::<Result<_, _>>()?,
-        session_timeout_ms: binding.session_timeout_ms,
-        cleanup_timeout_ms: binding.cleanup_timeout_ms,
+    let mut custody = match scoped {
+        Some(custody) => CustodyAccess::Scoped(custody),
+        None => CustodyAccess::Standalone(
+            Custody::start(
+                &executable,
+                &custody_path,
+                &CustodyConfig {
+                    resources: binding
+                        .resources
+                        .iter()
+                        .map(|resource| resource.socket_addr())
+                        .collect::<Result<_, _>>()?,
+                    session_timeout_ms: binding.session_timeout_ms,
+                    cleanup_timeout_ms: binding.cleanup_timeout_ms,
+                },
+            )
+            .map_err(|error| format!("cannot establish native custody: {error}"))?,
+        ),
     };
     directory.retained = true;
-    let mut custody = Custody::start(&executable, &custody_path, &config).map_err(|_| {
-        format!(
-            "cannot establish native custody; status directory: {}",
-            directory.path.display()
-        )
-    })?;
-    let mut state = State::new();
+    let custody_status_path = custody.status_path().to_owned();
+    let mut state = State::new(failure_observer);
     let mut worker = None;
     let mut starts = 0;
     let mut replay_started = None;
@@ -640,20 +786,17 @@ pub fn run(options: &Options, command: &[OsString], workdir: Option<&Path>) -> R
                 &mut state,
             )?);
         }
-        let stdio = unsafe {
-            [
-                BorrowedFd::borrow_raw(0),
-                BorrowedFd::borrow_raw(1),
-                BorrowedFd::borrow_raw(2),
-            ]
-        };
         replay_started = Some(Instant::now());
         custody
-            .spawn("author", &spec(author_argv, &author_context), stdio)
+            .spawn(
+                "author",
+                &spec(author_argv, &author_context),
+                [stdio.0[0].as_fd(), stdio.0[1].as_fd(), stdio.0[2].as_fd()],
+            )
             .map_err(|_| "cannot launch author under native custody")?;
         coordinate(
             Scope {
-                options,
+                options: &options,
                 binding: &binding,
                 baseline: &baseline,
                 baseline_cold,
@@ -704,28 +847,29 @@ pub fn run(options: &Options, command: &[OsString], workdir: Option<&Path>) -> R
         "outcome":if success {"success"} else {"failure"}, "author_status":author_status,
         "application_statuses":state.application_statuses,"infrastructure_failure":state.infrastructure,
         "cleanup":{"outcome":if state.stopped {"clean"} else {"uncertain"},"custodian_pid":custody.pid(),
-            "status_path":if directory.retained {Some(custody_path.with_extension("status.json"))} else {None}},
+            "status_path":if directory.retained {Some(&custody_status_path)} else {None}},
         "warm_calls":state.warm_calls,"cold_calls":state.cold_calls,"cold_reasons":state.cold_reasons,"worker_starts":starts,
         "durations_ms":{"preparation":null,"replay":replay_started.map(|started| started.elapsed().as_millis()).unwrap_or(0),"total":started.elapsed().as_millis()}
     });
-    if let Some(path) = &options.report {
-        let file = File::create(path).map_err(|_| "cannot create session report".to_owned())?;
-        serde_json::to_writer_pretty(file, &report)
-            .map_err(|_| "cannot write session report".to_owned())?;
-    }
+    let mut diagnostics = Vec::new();
     if let Some(reason) = &state.infrastructure {
-        eprintln!("mdrun: session infrastructure failure: {reason}");
+        diagnostics.push(format!("mdrun: session infrastructure failure: {reason}"));
     }
     if directory.retained {
-        eprintln!(
+        diagnostics.push(format!(
             "mdrun: custody retained; status: {}",
-            custody_path.with_extension("status.json").display()
-        );
+            custody_status_path.display()
+        ));
     }
-    Ok(if state.infrastructure.is_some() || !state.stopped {
+    let status = if state.infrastructure.is_some() || !state.stopped {
         1
     } else {
         result
+    };
+    Ok(SessionOutcome {
+        status,
+        report,
+        diagnostics,
     })
 }
 
@@ -734,7 +878,7 @@ fn start_worker(
     identity: &Identity,
     deadline: Instant,
     session_deadline: Instant,
-    custody: &mut Custody,
+    custody: &mut CustodyAccess,
     state: &mut State,
 ) -> Result<Worker, String> {
     let mut data = None;
@@ -871,7 +1015,7 @@ struct Scope<'a> {
 
 fn coordinate(
     scope: Scope<'_>,
-    custody: &mut Custody,
+    custody: &mut CustodyAccess,
     state: &mut State,
     worker: &mut Option<Worker>,
 ) -> Result<(), String> {
@@ -1221,7 +1365,7 @@ fn route_cold(
     binding: &Binding,
     reason: &str,
     active: &mut Invocation,
-    custody: &mut Custody,
+    custody: &mut CustodyAccess,
     state: &mut State,
 ) -> Result<(), String> {
     if options.require_warm {
@@ -1484,5 +1628,29 @@ mod tests {
         deferred = None;
         assert!(receive_admission(&active, &mut deferred, connection()).is_err());
         assert!(deferred.is_none());
+    }
+
+    #[test]
+    fn document_failure_closes_admission_before_its_cleanup_is_complete() {
+        let failed = Arc::new(AtomicBool::new(false));
+        let mut state = State::new(Some(failed.clone()));
+        state.event(
+            CustodyEvent::Exited {
+                id: "author".to_owned(),
+                status: PayloadStatus {
+                    code: Some(1),
+                    signal: None,
+                },
+            },
+            None,
+        );
+        assert!(failed.load(Ordering::Acquire));
+        assert!(!state.author.clean && !state.stopped);
+        assert!(state.infrastructure.is_none());
+        failed.store(false, Ordering::Release);
+        let mut state = State::new(Some(failed.clone()));
+        state.fail("infrastructure failed");
+        assert!(failed.load(Ordering::Acquire));
+        assert!(!state.stopped);
     }
 }

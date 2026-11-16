@@ -1,0 +1,128 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH mdrun-verify-many 1 2026-11-16 "mdrun 0.1.0" "mdrun manual"
+.SH NAME
+mdrun\-verify\-many \- Verify independent documents with bounded cooperative sessions
+.SH SYNOPSIS
+\fBmdrun verify\-many\fR [\fB\-\-workdir\fR] [\fB\-\-jobs\fR] [\fB\-\-share\-resources\fR] [\fB\-\-mode\fR] [\fB\-\-report\fR] [\fB\-\-require\-warm\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fB\-\-binding\fR> <\fIFILE\fR>
+.SH DESCRIPTION
+Verify independent documents with bounded cooperative sessions
+.SH OPTIONS
+.TP
+\fB\-\-binding\fR \fI<BINDING>\fR
+Prepared application binding shared by the batch
+.TP
+\fB\-\-workdir\fR \fI<DIR>\fR
+Execute code in DIR while resolving document paths from the current directory
+.TP
+\fB\-\-jobs\fR \fI<JOBS>\fR [default: 1]
+Maximum number of documents including startup and cleanup
+.TP
+\fB\-\-share\-resources\fR
+Permit independent documents to share the binding\*(Aqs resource exclusions
+.TP
+\fB\-\-mode\fR \fI<MODE>\fR [default: fast]
+Prefer eligible warm calls, or use only the packaged launcher
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+fast
+.IP \(bu 2
+cold
+.RE
+.TP
+\fB\-\-report\fR \fI<REPORT>\fR
+Write an aggregate report outside recorded document output
+.TP
+\fB\-\-require\-warm\fR
+Reject calls that cannot execute warm
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help (see a summary with \*(Aq\-h\*(Aq)
+.TP
+<\fIFILE\fR>
+Documents to verify, in input order
+.SH EXTRA
+Example (requires a prepared binding and independent documents):
+  mdrun verify\-many \-\-binding binding.json \-\-jobs 4 \-\-report batch.json \\
+    \-\- first.md second.md
+
+Each admitted document has a separate session and at most one sequential worker.
+Slots include startup, replay and cleanup. A failure or output mismatch stops admission;
+already\-started healthy documents finish within their deadlines.
+A batch custody failure can stop all sessions.
+Any declared resource makes effective concurrency 1 unless \-\-share\-resources
+permits sharing. The batch holds its exclusions across gaps between documents.
+stdin reads EOF. Output is spooled to disk without a byte quota and published in
+input order; a slow earlier document delays later output. Labels quote and escape
+filenames. Inputs are not updated.
+The report includes every requested document, including those not started.
+Cooperative process\-group limits still apply; see mdrun guide sessions.
+.SH EXIT STATUS
+.TP
+\&Successful help, version, guide, document editing, inventory or preview
+\&\fB0\fR
+.TP
+\&\fBverify\fR: recorded output matches
+\&\fB0\fR
+.TP
+\&\fBverify\fR: changed recorded output or execution/document error
+\&\fB1\fR
+.TP
+\&Invalid CLI usage
+\&\fB2\fR from clap
+.TP
+\&\fBexec\fR
+\&Executed program's exit status; \fB255\fR for signal termination on supported Unix platforms
+.TP
+\&\fBsession\fR
+\&Author's exit status, or \fB128 + signal\fR for a signalled author, when session health/cleanup succeeds; \fB1\fR for infrastructure or uncertain cleanup failure
+.TP
+\&Forwarded binding executable
+\&Application status, including native signal termination for a signalled cold process; \fB125\fR on forwarding/control failure
+.TP
+\&\fBverify\-many\fR
+\&\fB0\fR only when all requested documents and batch cleanup succeed; otherwise \fB1\fR
+.PP
+\&An executed program may itself return \fB1\fR, \fB2\fR or \fB125\fR; interpret the status in the context of the command you ran. \fBexec\fR records output even for nonzero status. \fBverify\fR checks output, not application exit status, and does not undo side effects. Managed\-session reports distinguish application results from infrastructure and cleanup failures; use \fBmdrun guide sessions\fR for version 1 field meanings and cold\-reason keys.
+.SH INPUT AND OUTPUT
+.PP
+\&\fBnote\fR, \fBexec\fR and \fBimage\fR read their omitted text/code/image argument from stdin. Executed document blocks read EOF from \fB/dev/null\fR on stdin unless their own code supplies input. \fBexec\fR merges stdout/stderr into one capture and prints that capture on stdout. Verification diffs, inventory, previews, extraction and guide text use stdout; mdrun diagnostics use stderr.
+.PP
+\&Session invocation streams preserve separate stdout/stderr unless the caller merges them. Application output must use the adapter's request\-owned streams. Session and batch reports go to \fB\-\-report FILE\fR and contain metadata, not captured application bytes or credentials. Human output is not a machine schema: use \fBlist \-\-json\fR and the versioned reports for automation.
+.SH FILES
+.IP \(bu 2
+\&Document/image/output/report paths resolve from the caller's current directory. \fB\-\-workdir DIR\fR affects executed programs, not those path arguments.
+.IP \(bu 2
+\&\fBinit\fR refuses an existing destination. \fBnote\fR, \fBexec\fR, \fBimage\fR and \fBpop\fR edit the selected document.
+.IP \(bu 2
+\&\fBverify\fR leaves its input unchanged unless that same path is explicitly selected with \fB\-\-output\fR. An output copy may replace an existing destination, so choose its path deliberately.
+.IP \(bu 2
+\&Images are copied beside the document. Removing their Markdown entry does not remove the copied file.
+.IP \(bu 2
+\&Binding files are supplied explicitly; mdrun does not search ancestor directories for a binding.
+.IP \(bu 2
+\&Report paths must not alias the binding, a verification input or its selected output, including through symlinks or hard links. Complete reports replace their destination through a temporary file and rename; a publication error fails the command.
+.IP \(bu 2
+\&Managed sessions create private temporary state with protected credentials. Successful cleanup removes it; uncertain cleanup can retain state and report its status path.
+.SH ENVIRONMENT
+.TP
+\&\fBPATH\fR
+\&Finds document interpreters and ordinary programs. Managed sessions prepend only their explicit forwarded executable binding.
+.TP
+\&\fBSHOWBOAT_REMOTE_URL\fR
+\&Optional compatible remote receiver. Editing commands POST document updates; unset/empty disables delivery. Delivery failure warns without discarding the local edit.
+.TP
+\&\fBMDRUN_SESSION\fR
+\&Internal managed\-session context, set by mdrun for its children. Do not set it manually or copy private configuration into documents.
+.PP
+\&The invoked application receives its execution environment. Warm admission compares context; runtime startup variables may require cold execution according to the binding. The host needs no installed Rust, Go, JVM, Node or Python runtime to start, but commands/adapters still need their own tools.
+.SH REMOTE DELIVERY
+.PP
+\&Remote updates retain the compatible \fBSHOWBOAT_REMOTE_URL\fR name. \fBinit\fR, \fBnote\fR, \fBexec\fR and \fBpop\fR send URL\-encoded form data; \fBimage\fR sends multipart data. The document UUID identifies the stream. Network errors are warnings rather than transaction rollback; local document success does not prove remote delivery.
+.SH COMPATIBILITY
+.PP
+\&Existing Showboat document provenance remains intact. New documents identify mdrun. Source\-preserving edits intentionally retain unmanaged spacing and line endings. Clap owns normal help, errors, option handling and \fB\-\-\fR; incidental Showboat parser quirks are not compatibility requirements.

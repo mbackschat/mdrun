@@ -8,7 +8,7 @@ Status: document CLI and discovery qualified on macOS/Linux, 2026-11-16. Impleme
 
 The Rust executable implements `init`, `note`, `exec`, `image`, `pop`, `verify` and `extract` with ordinary cold process execution. It supports stdin text/code/image inputs, merged stdout/stderr recording and command exit status, working-directory selection, copied images, replay/diffs and updated output, extraction and remote form/multipart delivery. New documents use mdrun provenance; untouched legacy source and metadata are retained. Explicitly choosing the input as `verify --output` updates that file; ordinary verification is read-only.
 
-Clap owns all parsing, help and version output. Normal informational requests exit 0; invalid or missing arguments exit 2; document/verification failures exit 1. `exec` returns the child status (255 for signal termination on qualified Unix behavior). `list` and `preview` provide the discovery behavior below. Native session, Node SDK, JVM SDK and Python SDK code is under qualification against the [proposed session contract](plans/session-protocol.md); it is not yet a supported migration boundary. Compiled Rust libraries do not require an installed language runtime or Showboat for host operation; invoked programs still need their own interpreters.
+Clap owns all parsing, help and version output. Normal informational requests exit 0; invalid or missing arguments exit 2; document/verification failures exit 1. `exec` returns the child status (255 for signal termination on qualified Unix behavior). `list` and `preview` provide the discovery behavior below. `guide` embeds the maintained document/session/reference guides, and generated man pages share the public clap definitions. Native session, Node SDK, JVM SDK and Python SDK code is under qualification against the [proposed session contract](plans/session-protocol.md); it is not yet a supported migration boundary. Compiled Rust libraries do not require an installed language runtime or Showboat for host operation; invoked programs still need their own interpreters.
 
 ## Required document behavior
 
@@ -40,8 +40,8 @@ Fast execution is the ordinary development route for qualified cooperative bindi
 | Failures | Application status is distinct from infrastructure/cleanup status; masked transport failures still fail the session |
 | Ownership | Cancellation, owner loss, worker failure and descendant exit within assigned process groups are observed; uncertain cleanup invalidates reuse and success |
 | Resource exclusion | Generic external resource identities remain excluded through observed cleanup of assigned groups, including parent loss |
-| Sessions | Sequential worker per document; an outer authoring session may span multiple CLI processes |
-| Scheduling | Bounded parallel independent documents; failure stops admission and drains launched peers |
+| Sessions | At most one sequential worker per document; explicit cold starts none; an outer authoring session may span multiple CLI processes |
+| Scheduling | Bounded parallel independent documents; document failure stops admission and drains healthy launched peers; cancellation or custody-wide failure stops all scopes |
 | Reporting | Versioned machine-readable application/infrastructure results, route counts/reasons, worker starts, identities and preparation/replay timing; no credentials or report data in captured command output |
 
 ## Platforms and distribution

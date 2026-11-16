@@ -8,4 +8,5 @@ mod remote;
 mod session;
 mod session_owner_loss;
 mod session_startup;
+mod verify_many;
 mod warm_owner_loss;

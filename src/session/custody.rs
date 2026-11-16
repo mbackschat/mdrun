@@ -80,7 +80,7 @@ struct Packet<T> {
 
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-enum OwnerRequest {
+pub(super) enum OwnerRequest {
     Spawn {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scope: Option<String>,
@@ -132,6 +132,7 @@ pub struct Custody {
     control: UnixStream,
     child: Child,
     pending: VecDeque<CustodyEvent>,
+    status_path: PathBuf,
 }
 
 impl Custody {
@@ -151,7 +152,7 @@ impl Custody {
         file.flush()?;
         let (mut control, child_control) = UnixStream::pair()?;
         configure_control(&control)?;
-        let child = Command::new(executable)
+        let mut child = Command::new(executable)
             .arg("__custodian")
             .arg("--config")
             .arg(private_config_path)
@@ -159,18 +160,30 @@ impl Custody {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()?;
-        let ready: CustodyEvent = receive_packet(&mut control)?
-            .ok_or_else(|| io::Error::other("custodian exited during startup"))?
-            .0;
-        if ready != CustodyEvent::Ready {
-            return Err(io::Error::other(
-                "custodian could not establish resource custody",
-            ));
+        let startup = (|| -> io::Result<()> {
+            let ready: CustodyEvent = receive_packet(&mut control)?
+                .ok_or_else(|| io::Error::other("custodian exited during startup"))?
+                .0;
+            if ready != CustodyEvent::Ready {
+                return Err(io::Error::other(
+                    "custodian could not establish resource custody",
+                ));
+            }
+            Ok(())
+        })();
+        if let Err(error) = startup {
+            // No owner request can precede Ready, so this child has no payload groups.
+            // Reap failed startup before callers discard its private status directory.
+            drop(control);
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
         }
         Ok(Self {
             control,
             child,
             pending: VecDeque::new(),
+            status_path: private_config_path.with_extension("status.json"),
         })
     }
 
@@ -231,6 +244,18 @@ impl Custody {
 
     pub fn pid(&self) -> u32 {
         self.child.id()
+    }
+
+    pub fn status_path(&self) -> &Path {
+        &self.status_path
+    }
+
+    pub(super) fn request(
+        &mut self,
+        request: &OwnerRequest,
+        descriptors: &[BorrowedFd<'_>],
+    ) -> io::Result<()> {
+        send_packet(&mut self.control, request, descriptors)
     }
 }
 
@@ -574,9 +599,9 @@ struct Group {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-struct GroupKey {
-    scope: Option<String>,
-    id: String,
+pub(super) struct GroupKey {
+    pub scope: Option<String>,
+    pub id: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "bundle_sha256": "24b20871743ff71e0ea7c9e6d98b9af1e8bc1c4d22384068ca58357da6925eb5",
+  "bundle_sha256": "ba026333267a5c1110ca39abc427cd374715ef415fd10d5ab978e764cb510422",
   "packages": [
     {
       "name": "anstream",
@@ -229,6 +229,23 @@
         {
           "path": "LICENSE-APACHE",
           "sha256": "249fdb6694467dd615b259f7ddde07be3f8ae5a72cecebb0e24f6629af4215fe"
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+        }
+      ]
+    },
+    {
+      "name": "clap_mangen",
+      "version": "0.3.3",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "211d617eaa4b735c96c9e0228fcbdb5120ef623f2b8cb67ffb84c3e02dbc28a4",
+      "license": "MIT OR Apache-2.0",
+      "files": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08"
         },
         {
           "path": "LICENSE-MIT",
@@ -1442,6 +1459,23 @@
       ],
       "notice_limits": [
         "third_party/fiat/LICENSE refers to AUTHORS, but third_party/fiat/AUTHORS is absent from the locked ring crate. The available fiat copyright and license notice are preserved."
+      ]
+    },
+    {
+      "name": "roff",
+      "version": "1.1.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "323c417e1d9665a65b263ec744ba09030cfb277e9daa0b018a4ab62e57bc8189",
+      "license": "MIT OR Apache-2.0",
+      "files": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08"
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+        }
       ]
     },
     {

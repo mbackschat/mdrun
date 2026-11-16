@@ -30,8 +30,10 @@ class Mdrun < Formula
   def install
     if build.head?
       system "cargo", "install", *std_cargo_args
+      man1.install Dir["docs/man/*.1"]
     else
       bin.install "mdrun"
+      man1.install Dir["share/man/man1/*.1"]
     end
     prefix.install "LICENSE", "THIRD_PARTY_NOTICES.txt"
   end

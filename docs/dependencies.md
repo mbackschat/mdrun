@@ -1,6 +1,6 @@
 # Rust dependency choices
 
-These libraries address demonstrated document and session needs; they were not inherited from LOCmetry. All are compiled into the native host. The complete resolved graph, including target-specific dependencies, is locked and subject to the [security quarantine](security.md) before compilation. Runtime SDK/application dependencies are qualified separately; the developing Node and Python SDKs use only their runtimes’ standard libraries.
+These libraries address demonstrated document and session needs; they were not inherited from LOCmetry. The runtime libraries below are compiled into the native host. The complete resolved graph, including development and target-specific dependencies, is locked and subject to the [security quarantine](security.md) before compilation. Runtime SDK/application dependencies are qualified separately; the developing Node and Python SDKs use only their runtimes’ standard libraries.
 
 | Direct library | Adopted version and publication date | Purpose |
 | --- | --- | --- |
@@ -19,6 +19,10 @@ Publication dates were checked against crates.io on 2026-11-16. The manifest pin
 Session work promoted already-locked `base64`, `libc` and `serde` versions to direct dependencies and enabled Serde's existing derive package. The complete graph was rechecked before compilation with zero age, prerelease or yanked-version violations; no registry package version changed in that promotion.
 
 The checked [crate notice bundle](../THIRD_PARTY_NOTICES.txt) preserves upstream notices for the complete locked registry graph, including nested components and packages for other targets. [Distribution](distribution.md) owns its regeneration checks and the remaining exact-toolchain/musl attribution audit. Release qualification measures the final host footprint. “Standalone” means no external Rust/Go/Python/Node/JVM installation is needed for the host, not that it contains no compiled libraries. Showboat is built with Go only for differential qualification; Python scripts are development/test tooling.
+
+## Manual generation
+
+Development-only `clap_mangen 0.3.3` (published 2026-08-12) generates checked manual pages from the same clap command definitions used by the executable; its sole added transitive library is `roff 1.1.1` (2026-03-28). Both were checked against the live registry on 2026-11-16 before compilation, with no yanked/prerelease/age-policy violations across the final graph. Existing locked versions were preserved. The generator and its transitive library are test-only and are not linked into the installed host. Ordinary tests check page freshness; explicit generation and rendering commands are documented in the [usability plan](plans/usability.md).
 
 ## JVM SDK development dependency
 
