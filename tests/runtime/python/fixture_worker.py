@@ -3,6 +3,7 @@
 import argparse
 import atexit
 import gc
+import json
 import os
 from pathlib import Path
 import sys
@@ -87,6 +88,22 @@ class Fixture(Application):
         elif command == "blocked_output":
             while True:
                 request.stdout.write(bytes(65536))
+        elif command == "streaming":
+            progress = Path(request.argv[1])
+            pending = progress.with_name(progress.name + ".pending")
+            pattern = bytes(index % 251 for index in range(65536))
+
+            def publish(completed):
+                pending.write_text(json.dumps({"pid": os.getpid(), "completed_bytes": completed}))
+                pending.replace(progress)
+
+            completed = 0
+            publish(completed)
+            while completed < 128 * 1024 * 1024:
+                written = request.stdout.write(pattern)
+                assert written == len(pattern)
+                completed += written
+                publish(completed)
         elif command == "borrowed_close":
             request.stdin.close()
             request.stdout.close()

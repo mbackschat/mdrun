@@ -289,6 +289,18 @@ def runtime_binding(args):
                                    env=environment, capture_output=True, check=True, timeout=5)
             environment["__CF_USER_TEXT_ENCODING"] = os.fsdecode(probe.stdout.removesuffix(b"\n"))
         runtime = "node"
+    elif args.python:
+        fixture = ROOT / "tests/runtime/python/fixture_worker.py"
+        context = {"LC_ALL": "C", "LANG": "C", "PYTHONCOERCECLOCALE": "0", "PYTHONUTF8": "1",
+                   "PYTHONDONTWRITEBYTECODE": "1"}
+        version = subprocess.run([str(args.python), "--version"], env={**environment, **context},
+                                 capture_output=True, text=True, check=True, timeout=5).stdout.strip()
+        identity = {"sdk": hashlib.sha256((ROOT / "sdk/python/mdrun_sdk/__init__.py").read_bytes()).hexdigest(),
+                    "fixture": hashlib.sha256(fixture.read_bytes()).hexdigest(),
+                    "python": str(args.python), "python_version": version, "context": context}
+        binding = {"version": 1, "name": "tool", "worker_argv": [str(args.python), str(fixture)],
+                   "cold_argv": ["/bin/false"], "context": {"environment": context}}
+        runtime = "python"
     else:
         manifest = json.loads(args.jvm_fixture.read_text())
         assert manifest["schema_version"] == 1
@@ -298,7 +310,7 @@ def runtime_binding(args):
     binding.update({"startup_timeout_ms": 5000, "session_timeout_ms": CASE_SECONDS * 1000,
                     "cleanup_timeout_ms": 2000})
     binding["artifact_id"] = "sha256:" + hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
-    return runtime, binding, environment
+    return runtime, binding, environment, identity
 
 
 def main():
@@ -307,17 +319,18 @@ def main():
     runtime = parser.add_mutually_exclusive_group(required=True)
     runtime.add_argument("--node", type=Path)
     runtime.add_argument("--jvm-fixture", type=Path)
+    runtime.add_argument("--python", type=Path)
     parser.add_argument("--case", choices=("all", "bounded", "eager", "broken"), default="all",
                         help="all checks bounded success, eager rejection and broken-reader failure; eager alone exposes the expected failing oracle")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    for path in (args.mdrun, args.node, args.jvm_fixture):
+    for path in (args.mdrun, args.node, args.jvm_fixture, args.python):
         if path is not None:
             assert path.is_absolute() and path.is_file(), path
     started = time.monotonic()
-    runtime, binding, environment = runtime_binding(args)
+    runtime, binding, environment, identity = runtime_binding(args)
     result = {"runtime": runtime, "host_sha256": hashlib.sha256(args.mdrun.read_bytes()).hexdigest(),
-              "binding_artifact_id": binding["artifact_id"], "cases": [],
+              "binding_artifact_id": binding["artifact_id"], "runtime_identity": identity, "cases": [],
               "limits": "RSS is supplementary; the accepted-byte bound and a separate finite-queue source audit establish bounded transport."}
     for case in (["bounded", "eager", "broken"] if args.case == "all" else [args.case]):
         result["cases"].append(run_case(args.mdrun, binding, environment, case, started + 60))
