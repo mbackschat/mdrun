@@ -98,7 +98,7 @@ fn observe_group(group: libc::pid_t) -> io::Result<Vec<libc::pid_t>> {
         };
         let stat = match std::fs::read(entry.path().join("stat")) {
             Ok(stat) => stat,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) if process_disappeared(&error) => continue,
             Err(error) => return Err(error),
         };
         let (process_group, state) = parse_linux_stat(&stat)?;
@@ -107,6 +107,13 @@ fn observe_group(group: libc::pid_t) -> io::Result<Vec<libc::pid_t>> {
         }
     }
     Ok(live)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn process_disappeared(error: &io::Error) -> bool {
+    // A task can exit after procfs open succeeds, making the subsequent read fail with ESRCH.
+    // https://docs.kernel.org/filesystems/proc.html#process-specific-subdirectories
+    matches!(error.raw_os_error(), Some(libc::ENOENT) | Some(libc::ESRCH))
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -162,6 +169,65 @@ mod tests {
     fn invalid_group_is_not_a_cleanup_certificate() {
         assert!(live_group_members(0).is_err());
         assert!(live_group_members(-1).is_err());
+    }
+
+    #[test]
+    fn procfs_disappearance_accepts_enoent_and_esrch_only() {
+        for errno in [libc::ENOENT, libc::ESRCH] {
+            assert!(
+                process_disappeared(&io::Error::from_raw_os_error(errno)),
+                "errno {errno}"
+            );
+        }
+        for errno in [
+            libc::EACCES,
+            libc::EPERM,
+            libc::EIO,
+            libc::EBADF,
+            libc::EINVAL,
+            libc::EINTR,
+        ] {
+            assert!(
+                !process_disappeared(&io::Error::from_raw_os_error(errno)),
+                "errno {errno}"
+            );
+        }
+        for kind in [
+            io::ErrorKind::NotFound,
+            io::ErrorKind::PermissionDenied,
+            io::ErrorKind::InvalidData,
+            io::ErrorKind::Other,
+        ] {
+            assert!(!process_disappeared(&io::Error::new(
+                kind,
+                "observation failed"
+            )));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn retained_procfs_stat_reports_disappearance_after_owned_child_exit() {
+        use std::io::Read;
+        use std::os::unix::process::ExitStatusExt;
+        use std::process::{Command, Stdio};
+
+        let mut child = Command::new("/bin/sleep")
+            .arg("15")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let stat = std::fs::File::open(format!("/proc/{}/stat", child.id()));
+        let killed = child.kill();
+        let reaped = child.wait();
+        let mut stat = stat.unwrap();
+        killed.unwrap();
+        assert_eq!(reaped.unwrap().signal(), Some(libc::SIGKILL));
+        let error = stat.read_to_end(&mut Vec::new()).unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(libc::ESRCH));
+        assert!(process_disappeared(&error));
     }
 
     #[test]

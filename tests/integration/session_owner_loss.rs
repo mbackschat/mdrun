@@ -50,7 +50,7 @@ pub(super) fn observe(pid: i32) -> io::Result<Option<Process>> {
     {
         let stat = match fs::read_to_string(format!("/proc/{pid}/stat")) {
             Ok(stat) => stat,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) if process_disappeared(&error) => return Ok(None),
             Err(error) => return Err(error),
         };
         let (_, fields) = stat
@@ -74,6 +74,46 @@ pub(super) fn observe(pid: i32) -> io::Result<Option<Process>> {
             group: number(fields[2])?,
             identity: fields[19].to_owned(),
         }))
+    }
+}
+
+fn process_disappeared(error: &io::Error) -> bool {
+    // An open procfs stat may lose its task before reading, which reports ESRCH instead of ENOENT.
+    // https://docs.kernel.org/filesystems/proc.html#process-specific-subdirectories
+    matches!(error.raw_os_error(), Some(libc::ENOENT) | Some(libc::ESRCH))
+}
+
+#[test]
+fn independent_procfs_observer_accepts_only_disappearance_errors() {
+    for errno in [libc::ENOENT, libc::ESRCH] {
+        assert!(
+            process_disappeared(&io::Error::from_raw_os_error(errno)),
+            "errno {errno}"
+        );
+    }
+    for errno in [
+        libc::EACCES,
+        libc::EPERM,
+        libc::EIO,
+        libc::EBADF,
+        libc::EINVAL,
+        libc::EINTR,
+    ] {
+        assert!(
+            !process_disappeared(&io::Error::from_raw_os_error(errno)),
+            "errno {errno}"
+        );
+    }
+    for kind in [
+        io::ErrorKind::NotFound,
+        io::ErrorKind::PermissionDenied,
+        io::ErrorKind::InvalidData,
+        io::ErrorKind::Other,
+    ] {
+        assert!(!process_disappeared(&io::Error::new(
+            kind,
+            "observation failed"
+        )));
     }
 }
 
